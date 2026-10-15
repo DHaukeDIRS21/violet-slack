@@ -21,10 +21,9 @@ Posts erscheinen unter deinem Namen (User-Token), Violet selbst schreibt nur in 
 
 ## Einrichtung
 
-1. **Slack-App anlegen**: <https://api.slack.com/apps> → *Create New App* → *From a manifest* → Inhalt von
-   [`manifest.yaml`](manifest.yaml) einfügen. (Existiert die alte App „Violet“ noch, dort unter
-   *App Manifest* den Inhalt ersetzen – dann bleibt die DM erhalten.)
-2. *Install to Workspace* – dabei autorisierst du auch die User-Scopes.
+1. **Slack-App**: Die bestehende App „Violet“ unter <https://api.slack.com/apps> verwenden und unter *App Manifest* den Inhalt von
+   [`manifest.yaml`](manifest.yaml) einspielen (neu anlegen nur, falls sie fehlt: *Create New App* → *From a manifest*).
+2. *Reinstall to Workspace* – dabei autorisierst du auch die User-Scopes.
 3. Tokens holen:
    - *OAuth & Permissions* → **Bot User OAuth Token** (`xoxb-…`) und **User OAuth Token** (`xoxp-…`)
    - *Basic Information* → *App-Level Tokens* → Token mit Scope `connections:write` (`xapp-…`)
