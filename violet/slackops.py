@@ -124,6 +124,27 @@ class SlackOps:
                 break
         return channels
 
+    def _active_dm_ids(self, oldest: float) -> set[str] | None:
+        """IDs der DMs/Gruppen-DMs mit Nachrichten seit `oldest` – per Suche statt
+        `conversations.history` für jeden DM-Kanal (das läuft sofort ins Rate-Limit).
+        None, wenn die Suche nicht geht (dann alle Kanäle durchgehen)."""
+        after = (datetime.fromtimestamp(oldest, self.tz) - timedelta(days=1)).strftime("%Y-%m-%d")
+        ids, page = set(), 1
+        try:
+            while True:
+                resp = self.user.search_messages(
+                    query=f"is:dm after:{after}", sort="timestamp", sort_dir="desc", count=100, page=page
+                )
+                matches = resp["messages"]["matches"]
+                ids |= {m["channel"]["id"] for m in matches if float(m["ts"]) >= oldest}
+                pages = resp["messages"]["paging"].get("pages", 1)
+                if page >= pages or not matches or float(matches[-1]["ts"]) < oldest:
+                    break
+                page += 1
+        except SlackApiError:
+            return None
+        return ids
+
     def _history(self, channel: str, oldest: float) -> list[dict]:
         try:
             resp = self.user.conversations_history(channel=channel, oldest=str(oldest), limit=200)
@@ -136,6 +157,9 @@ class SlackOps:
     def collect_dms(self, oldest: float, skip: set[str]) -> list[dict]:
         """[{'channel', 'label', 'partner', 'messages': [...]}] mit Nachrichten seit `oldest`."""
         channels = self._dm_channels(skip)
+        active = self._active_dm_ids(oldest)
+        if active is not None:
+            channels = [c for c in channels if c["id"] in active]
 
         def load(ch: dict) -> dict | None:
             msgs = self._history(ch["id"], oldest)
@@ -151,7 +175,7 @@ class SlackOps:
                 label = "Gruppe: " + ", ".join(sorted(self.name(u) for u in members if u))
             return {"channel": ch["id"], "label": label, "partner": partner, "messages": msgs}
 
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             result = [r for r in pool.map(load, channels) if r]
         return result
 
