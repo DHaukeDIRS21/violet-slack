@@ -15,7 +15,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from slack_bolt import App
+from slack_bolt.error import BoltError
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_sdk.errors import SlackApiError
 
 from . import focus as F
 from .config import Config, load_dotenv
@@ -456,26 +458,56 @@ class Violet:
         SocketModeHandler(self.app, self.cfg.app_token).start()
 
 
+FATAL_SLACK_ERRORS = {"invalid_auth", "not_authed", "account_inactive", "token_revoked",
+                      "token_expired", "not_allowed_token_type", "missing_scope", "invalid_token"}
+
+
 def main() -> None:
-    load_dotenv(Path(os.environ.get("VIOLET_ENV_FILE", ".env")))
-    cfg = Config.from_env()
-    cfg.data_dir.mkdir(parents=True, exist_ok=True)
-    handlers = [RotatingFileHandler(cfg.data_dir / "violet.log", maxBytes=2_000_000,
+    base = Path(__file__).resolve().parents[1]  # Installationsordner (enthält .env)
+    env_file = os.environ.get("VIOLET_ENV_FILE")
+    if not env_file:
+        env_file = ".env" if Path(".env").is_file() else str(base / ".env")
+    load_dotenv(Path(env_file))
+    os.environ.setdefault("VIOLET_DATA_DIR", str(base / "data"))
+
+    # Logging zuerst – unter pythonw (Autostart) gibt es keine Konsole, nur diese Datei.
+    data_dir = Path(os.environ["VIOLET_DATA_DIR"])
+    data_dir.mkdir(parents=True, exist_ok=True)
+    handlers = [RotatingFileHandler(data_dir / "violet.log", maxBytes=2_000_000,
                                     backupCount=3, encoding="utf-8")]
-    if sys.stderr is not None:  # unter pythonw (Autostart) gibt es keine Konsole
+    if sys.stderr is not None:
         handlers.append(logging.StreamHandler())
     logging.basicConfig(level=logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log.info("Violet startet (env: %s)", env_file)
+    try:
+        _start(Config.from_env())
+    except Exception:
+        log.exception("Violet beendet wegen Fehler")
+        sys.exit(1)
+
+
+def _start(cfg: Config) -> None:
     # Beim Hochfahren ist das Netz (WLAN/VPN) oft noch nicht da – geduldig warten.
+    # Falsche Tokens dagegen werden nicht besser: dann sofort klar abbrechen.
     delay = 10
     while True:
         try:
             violet = Violet(cfg)
             break
-        except Exception as exc:  # noqa: BLE001
+        except BoltError as exc:  # Bolt prüft den Bot-Token beim Start selbst
+            raise RuntimeError(f"Slack lehnt den Bot-Token ab ({exc}). SLACK_BOT_TOKEN in der .env prüfen.") from exc
+        except SlackApiError as exc:
+            if exc.response.get("error") in FATAL_SLACK_ERRORS:
+                raise RuntimeError(
+                    f"Slack lehnt einen Token ab ({exc.response.get('error')}). Tokens in der .env "
+                    "prüfen; nach Manifest-Änderungen die App neu installieren."
+                ) from exc
             log.warning("Start fehlgeschlagen (%s) – neuer Versuch in %s s", exc, delay)
-            time.sleep(delay)
-            delay = min(delay * 2, 300)
+        except Exception as exc:  # noqa: BLE001 – meist Netzwerk
+            log.warning("Start fehlgeschlagen (%s) – neuer Versuch in %s s", exc, delay)
+        time.sleep(delay)
+        delay = min(delay * 2, 300)
     log.info("Violet läuft.")
     violet.run()
 

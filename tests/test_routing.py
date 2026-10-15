@@ -76,3 +76,19 @@ def test_check_setup_ok_and_missing_scope(violet):
     violet.user = _client(REQUIRED_USER_SCOPES - {"channels:history"}, user_id="UOTHER")
     problems = violet.check_setup()
     assert "channels:history" in problems[0] and "UOTHER" in problems[1]
+
+
+def test_start_fails_fast_on_bad_token(monkeypatch):
+    from slack_bolt.error import BoltError
+    from slack_sdk.errors import SlackApiError
+
+    import violet.app as app_mod
+
+    for exc in (BoltError("invalid_auth"),
+                SlackApiError("x", {"ok": False, "error": "invalid_auth"})):
+        def boom(cfg, exc=exc):
+            raise exc
+        monkeypatch.setattr(app_mod, "Violet", boom)
+        monkeypatch.setattr(app_mod.time, "sleep", lambda s: pytest.fail("sollte nicht warten"))
+        with pytest.raises(RuntimeError, match="Token"):
+            app_mod._start(MagicMock())
