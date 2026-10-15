@@ -1,0 +1,14 @@
+# systemd-Unit: sudo cp violet.service /etc/systemd/system/ && sudo systemctl enable --now violet
+[Unit]
+Description=Violet Slack-Assistentin
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/violet
+EnvironmentFile=/opt/violet/.env
+ExecStart=/opt/violet/.venv/bin/python -m violet
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

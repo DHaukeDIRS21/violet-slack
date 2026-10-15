@@ -1,0 +1,42 @@
+# Slack-App-Manifest für Violet – unter https://api.slack.com/apps → "Create New App" → "From a manifest"
+display_information:
+  name: Violet
+  description: Daniels persönliche Assistentin – Focus of the day, #allgemein-Posts, DM-Digest
+  background_color: "#6b3fa0"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Violet
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - im:history
+      - im:read
+      - im:write
+      - users:read
+    user:
+      - chat:write          # postet als du (Focus, #allgemein, Weiterleitung)
+      - channels:history    # Focus-Thread in #improver-squad finden
+      - groups:history
+      - im:history          # DM-Digest + Live-DMs
+      - im:read
+      - mpim:history
+      - mpim:read
+      - users:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.im          # deine Befehle an Violet
+    user_events:
+      - message.im          # neue DMs an dich (Live-Anzeige)
+      - message.mpim
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
