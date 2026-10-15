@@ -56,3 +56,23 @@ def test_focus_answer_uses_state(violet):
 def test_live_toggle(violet):
     violet.handle_command("live aus")
     assert violet.store.get("live") is False
+
+
+def _client(scopes, user_id="UMP9T403C"):
+    resp = MagicMock()
+    resp.headers = {"x-oauth-scopes": ",".join(scopes)}
+    resp.get = {"user_id": user_id}.get
+    client = MagicMock()
+    client.auth_test.return_value = resp
+    return client
+
+
+def test_check_setup_ok_and_missing_scope(violet):
+    from violet.app import REQUIRED_BOT_SCOPES, REQUIRED_USER_SCOPES
+    violet.cfg = MagicMock(owner_user_id="UMP9T403C")
+    violet.bot = _client(REQUIRED_BOT_SCOPES)
+    violet.user = _client(REQUIRED_USER_SCOPES)
+    assert violet.check_setup() == []
+    violet.user = _client(REQUIRED_USER_SCOPES - {"channels:history"}, user_id="UOTHER")
+    problems = violet.check_setup()
+    assert "channels:history" in problems[0] and "UOTHER" in problems[1]

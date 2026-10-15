@@ -43,6 +43,10 @@ FOCUS_QUESTIONS = """*Für heute – antworte in einer Nachricht:*
 4. *Other Topics:* Was kam ungeplant dazu?
 5. *SOS / Info* fürs Team (optional)"""
 
+REQUIRED_USER_SCOPES = {"chat:write", "channels:history", "im:history", "im:read",
+                        "mpim:history", "mpim:read", "users:read"}
+REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read"}
+
 NOT_UNDERSTOOD = "Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
 
 STATUS_WORDS = re.compile(
@@ -423,7 +427,32 @@ class Violet:
         self._guard(run)
 
     # ======================================================================
+    def check_setup(self) -> list[str]:
+        """Prüft Token-Besitzer und Scopes; liefert eine Liste von Problemen."""
+        problems = []
+        for label, client, required in (("User-Token", self.user, REQUIRED_USER_SCOPES),
+                                        ("Bot-Token", self.bot, REQUIRED_BOT_SCOPES)):
+            resp = client.auth_test()
+            granted = {x.strip() for x in resp.headers.get("x-oauth-scopes", "").split(",") if x.strip()}
+            missing = sorted(required - granted)
+            if granted and missing:
+                problems.append(f"{label}: fehlende Scopes `{', '.join(missing)}` – Manifest prüfen "
+                                "und App neu installieren (Reinstall to Workspace).")
+            if label == "User-Token" and resp.get("user_id") != self.cfg.owner_user_id:
+                problems.append(f"User-Token gehört <@{resp.get('user_id')}>, nicht <@{self.cfg.owner_user_id}> "
+                                "– Violet würde unter falschem Namen posten.")
+        return problems
+
     def run(self) -> None:
+        problems = self.check_setup()
+        for p in problems:
+            log.error(p)
+        today = self.slack.now().date().isoformat()
+        if problems:
+            self.say(":warning: *Violet ist gestartet, aber:*\n" + "\n".join(f"• {p}" for p in problems))
+        elif self.store.get("last_hello") != today:
+            self.say(":wave: Violet läuft wieder. Schreib `hilfe` für alle Befehle.")
+        self.store.set("last_hello", today)
         SocketModeHandler(self.app, self.cfg.app_token).start()
 
 
