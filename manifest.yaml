@@ -27,11 +27,14 @@ oauth_config:
       - channels:history    # Focus-Thread in #improver-squad lesen
       - channels:read
       - users:read
+      - files:read          # Bilder aus DMs laden
+      - files:write         # Bilder mit nach #dirs21_sysadmin weiterleiten
     bot:
       - chat:write
       - im:history
       - im:write
       - users:read
+      - files:write         # Bilder aus DMs im Violet-Chat zeigen
   pkce_enabled: false
 settings:
   event_subscriptions:

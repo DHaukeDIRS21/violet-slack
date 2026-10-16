@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -57,6 +58,21 @@ class SlackOps:
             except SlackApiError:
                 self._names[user_id] = user_id
         return self._names[user_id]
+
+    def download(self, file: dict) -> bytes | None:
+        """Inhalt einer Slack-Datei (mit dem User-Token, braucht `files:read`); None, wenn's nicht geht."""
+        url = file.get("url_private_download") or file.get("url_private")
+        try:
+            if not url:  # z. B. file_access=check_file_info
+                url = self.user.files_info(file=file["id"])["file"].get("url_private_download")
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.user.token}"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                # ohne Berechtigung liefert Slack eine HTML-Loginseite statt der Datei
+                if resp.headers.get_content_type().startswith("text/html"):
+                    return None
+                return resp.read()
+        except (SlackApiError, OSError, KeyError, TypeError, ValueError):
+            return None
 
     def fmt_time(self, ts: str, with_date: bool = False) -> str:
         dt = datetime.fromtimestamp(float(ts), self.tz)

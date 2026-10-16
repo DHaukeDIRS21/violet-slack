@@ -58,6 +58,30 @@ def test_live_toggle(violet):
     assert violet.store.get("live") is False
 
 
+def test_live_forward_shares_images(violet):
+    violet.cfg = MagicMock(owner_user_id="UMP9T403C")
+    violet.dm = "DVIOLET"
+    violet.bot = MagicMock()
+    violet.slack = MagicMock()
+    violet.slack.name.return_value = "Tina"
+    violet.slack.permalink.return_value = "https://x/msg"
+    violet.slack.fmt_time.return_value = "08:52"
+    violet.slack.download.side_effect = [b"png-bytes", None]
+    event = {"user": "UTINA", "channel": "DTINA", "ts": "1.0", "text": "Zugriff?", "files": [
+        {"id": "F1", "name": "screen.png", "mimetype": "image/png", "permalink": "https://x/F1"},
+        {"id": "F2", "name": "kaputt.png", "mimetype": "image/png", "permalink": "https://x/F2"},
+        {"id": "F3", "name": "liste.pdf", "mimetype": "application/pdf", "permalink": "https://x/F3"},
+    ]}
+    violet.live_forward(event)
+    msg = violet.say.call_args.args[0]
+    assert "<https://x/F1|screen.png>" in msg and "<https://x/F3|liste.pdf>" in msg
+    # nur Bilder werden hochgeladen; ein nicht ladbares Bild wird übersprungen
+    violet.bot.files_upload_v2.assert_called_once_with(
+        channel="DVIOLET", thread_ts=None, content=b"png-bytes", filename="screen.png")
+    draft = violet.store.get_draft(violet.say.call_args.args[1][1]["elements"][0]["value"])
+    assert [f["id"] for f in draft["files"]] == ["F1", "F2", "F3"]
+
+
 def _client(scopes, user_id="UMP9T403C"):
     resp = MagicMock()
     resp.headers = {"x-oauth-scopes": ",".join(scopes)}

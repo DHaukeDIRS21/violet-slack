@@ -46,8 +46,8 @@ FOCUS_QUESTIONS = """*Für heute – antworte in einer Nachricht:*
 5. *SOS / Info* fürs Team (optional)"""
 
 REQUIRED_USER_SCOPES = {"chat:write", "channels:history", "im:history", "im:read",
-                        "mpim:history", "mpim:read", "users:read"}
-REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read"}
+                        "mpim:history", "mpim:read", "users:read", "files:read", "files:write"}
+REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "files:write"}
 
 NOT_UNDERSTOOD = "Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
 
@@ -394,10 +394,16 @@ class Violet:
         name = self.slack.name(sender)
         link = self.slack.permalink(channel, ts, thread)
         text = event.get("text") or ""
+        files = [{k: f.get(k) for k in ("id", "name", "mimetype", "permalink",
+                                         "url_private", "url_private_download")}
+                 for f in event.get("files") or []]
         msg = f":speech_balloon: *{name}* · <{link}|antworten>\n" + quote(
             f"`{self.slack.fmt_time(ts)}` {text}"
         )
-        draft_id = self.store.new_draft({"kind": "forward", "user": sender, "text": text, "link": link})
+        if files:
+            msg += "\n" + "  ".join(f":paperclip: <{f['permalink']}|{f['name'] or 'Datei'}>" for f in files)
+        draft_id = self.store.new_draft({"kind": "forward", "user": sender, "text": text, "link": link,
+                                         "files": files})
         self.say(msg, [
             {"type": "section", "text": {"type": "mrkdwn", "text": msg}},
             {"type": "actions", "elements": [{
@@ -405,6 +411,24 @@ class Violet:
                 "text": {"type": "plain_text", "text": "➡️ An #dirs21_sysadmin"},
             }]},
         ])
+        self.share_images(self.bot, self.dm, files)
+
+    def share_images(self, client, channel: str, files: list[dict], thread_ts: str | None = None) -> None:
+        """Bilder aus einer DM in `channel` hochladen. Klappt das nicht (fehlende Scopes),
+        bleibt der :paperclip:-Link in der Nachricht."""
+        for f in files:
+            if not (f.get("mimetype") or "").startswith("image/"):
+                continue
+            data = self.slack.download(f)
+            if data is None:
+                log.warning("Bild %s nicht ladbar – Scope files:read fehlt?", f.get("id"))
+                continue
+            try:
+                client.files_upload_v2(channel=channel, thread_ts=thread_ts, content=data,
+                                       filename=f.get("name") or "bild.png")
+            except SlackApiError as exc:
+                log.warning("Bild-Upload fehlgeschlagen (%s) – Scope files:write fehlt?",
+                            exc.response.get("error"))
 
     def _on_forward(self, ack, body) -> None:
         ack()
@@ -420,6 +444,7 @@ class Violet:
             ts = self.user.chat_postMessage(
                 channel=ch, text=f":incoming_envelope: Anfrage von <@{draft['user']}>:\n{quote(draft['text'], 3500)}"
             )["ts"]
+            self.share_images(self.user, ch, draft.get("files") or [], thread_ts=ts)
             self.store.delete_draft(draft_id)
             blocks = [b for b in message.get("blocks", []) if b.get("type") != "actions"]
             blocks.append({"type": "context", "elements": [{
