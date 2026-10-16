@@ -128,6 +128,32 @@ def render_post(post: dict) -> str:
     return "\n".join(lines)
 
 
+WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+
+def render_markdown(post: dict | None, day, link: str | None = None) -> str:
+    """Canvas im Violet-Chat: der heutige Focus, Focus-Punkte zuerst."""
+    lines = [f"# :dart: Focus – {WEEKDAYS[day.weekday()]}, {day:%d.%m.%Y}", ""]
+    if post is None:
+        lines.append("_Heute noch kein Focus-Post – schreib Violet `focus`._")
+        return "\n".join(lines)
+    if post.get("info", "").strip():
+        lines += [f"**Info:** {post['info'].strip()}", ""]
+    for key, title in (("focus", "Focus :dart:"), ("other", "Other Topics (unplanned)"),
+                       ("recap", "Recap :checkered_flag:")):
+        items = [i for i in post.get(key, []) if i.get("text", "").strip()]
+        if items:
+            lines.append(f"## {title}")
+            lines += ["- " + _render_item(i)[2:] for i in items]
+            lines.append("")
+    for key, label in (("sos", ":sos: SOS"), ("information", ":information_source: Info ans Team")):
+        if post.get(key, "").strip():
+            lines += [f"**{label}:** {post[key].strip()}", ""]
+    if link:
+        lines.append(f"[Post in #improver-squad öffnen]({link})")
+    return "\n".join(lines).rstrip()
+
+
 def looks_like_focus_post(text: str) -> bool:
     low = (text or "").lower()
     return "info:" in low and "focus" in low

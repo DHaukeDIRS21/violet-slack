@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
 from datetime import timedelta
 from logging.handlers import RotatingFileHandler
@@ -29,7 +30,7 @@ from .store import Store
 log = logging.getLogger("violet")
 
 HELP_TEXT = """*Was ich kann:*
-• `focus` – Focus of the day für #improver-squad
+• `focus` – Focus of the day für #improver-squad (dein heutiger Focus steht immer im Canvas oben in diesem Chat – rechts als Seitenleiste öffnen)
 • `@channel :information_source: Titel` + Text – zweisprachiger Post in #allgemein
 • `allgemein: Text` – Post in #allgemein, unverändert
 • `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:)
@@ -50,7 +51,8 @@ FOCUS_QUESTIONS = """*Für heute – antworte in einer Nachricht:*
 REQUIRED_USER_SCOPES = {"chat:write", "channels:history", "im:history", "im:read",
                         "mpim:history", "mpim:read", "users:read", "files:read", "files:write",
                         "groups:history"}
-REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "files:write"}
+REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "files:write",
+                       "canvases:write"}
 
 NOT_UNDERSTOOD = "Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
 
@@ -244,6 +246,50 @@ class Violet:
         ts = self.user.chat_postMessage(channel=ch, thread_ts=root, text=text)["ts"]
         return self.slack.permalink(ch, ts, root)
 
+    _canvas_lock = threading.Lock()  # Timer und „Posten“-Klick nicht gleichzeitig
+
+    def refresh_focus_canvas(self) -> None:
+        """Den heutigen Focus in den Canvas des Violet-Chats schreiben (rechts als Seitenleiste öffnen)."""
+        with self._canvas_lock:
+            self._refresh_focus_canvas()
+
+    def _refresh_focus_canvas(self) -> None:
+        post = self.slack.today_post()
+        link = self.slack.permalink(self.cfg.focus_channel, post["ts"], post["root_ts"]) if post else None
+        md = F.render_markdown(F.parse_post(post["text"]) if post else None, self.slack.now(), link)
+        if md == self.store.get("canvas_md"):
+            return
+        doc = {"type": "markdown", "markdown": md}
+        canvas_id = self.store.get("canvas_id")
+        if canvas_id:
+            try:
+                self.bot.canvases_edit(canvas_id=canvas_id,
+                                       changes=[{"operation": "replace", "document_content": doc}])
+            except SlackApiError as exc:
+                if exc.response.get("error") not in ("canvas_not_found", "file_not_found", "invalid_canvas"):
+                    raise
+                canvas_id = None
+        if not canvas_id:
+            try:
+                canvas_id = self.bot.conversations_canvases_create(channel_id=self.dm, document_content=doc)["canvas_id"]
+            except SlackApiError as exc:
+                if exc.response.get("error") != "channel_canvas_already_exists":
+                    raise
+                canvas_id = self.bot.conversations_info(channel=self.dm)["channel"]["properties"]["canvas"]["file_id"]
+                self.bot.canvases_edit(canvas_id=canvas_id,
+                                       changes=[{"operation": "replace", "document_content": doc}])
+        self.store.set("canvas_id", canvas_id)
+        self.store.set("canvas_md", md)
+
+    def _canvas_loop(self) -> None:
+        # Auch Änderungen, die du direkt in Slack machst, landen so im Canvas.
+        while True:
+            try:
+                self.refresh_focus_canvas()
+            except Exception as exc:  # noqa: BLE001 – nur loggen, nicht alle 10 min per DM nerven
+                log.warning("Focus-Canvas nicht aktualisiert: %s", exc)
+            time.sleep(600)
+
     # ======================================================================
     # #allgemein
     # ======================================================================
@@ -319,6 +365,11 @@ class Violet:
                 verb = "Gepostet"
             self.store.delete_draft(draft_id)
             self._finish_preview(draft, f":white_check_mark: {verb}: <{link}|ansehen>")
+            if draft["kind"] == "focus":
+                try:
+                    self.refresh_focus_canvas()
+                except Exception as exc:  # noqa: BLE001 – Posten hat geklappt, Canvas ist Beiwerk
+                    log.warning("Focus-Canvas nicht aktualisiert: %s", exc)
 
         self._guard(run)
 
@@ -553,6 +604,7 @@ class Violet:
         elif self.store.get("last_hello") != today:
             self.say(":wave: Violet läuft wieder. Schreib `hilfe` für alle Befehle.")
         self.store.set("last_hello", today)
+        threading.Thread(target=self._canvas_loop, name="focus-canvas", daemon=True).start()
         SocketModeHandler(self.app, self.cfg.app_token).start()
 
 
