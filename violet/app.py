@@ -20,6 +20,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk.errors import SlackApiError
 
 from . import focus as F
+from . import monitor as M
 from .config import Config, load_dotenv
 from .llm import Claude, LLMError
 from .slackops import SlackOps, make_client
@@ -35,6 +36,7 @@ HELP_TEXT = """*Was ich kann:*
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
+• `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau sofort hier melden (Standard: an)
 • `abbrechen` – laufenden Vorgang beenden
 Ich poste nie ohne deinen Klick auf :white_check_mark: Posten."""
 
@@ -46,7 +48,8 @@ FOCUS_QUESTIONS = """*Für heute – antworte in einer Nachricht:*
 5. *SOS / Info* fürs Team (optional)"""
 
 REQUIRED_USER_SCOPES = {"chat:write", "channels:history", "im:history", "im:read",
-                        "mpim:history", "mpim:read", "users:read", "files:read", "files:write"}
+                        "mpim:history", "mpim:read", "users:read", "files:read", "files:write",
+                        "groups:history"}
 REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "files:write"}
 
 NOT_UNDERSTOOD = "Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
@@ -100,6 +103,7 @@ class Violet:
         self.store = Store(cfg.data_dir)
         self.slack = SlackOps(self.user, cfg.owner_user_id, cfg.focus_channel, cfg.timezone)
         self.llm = Claude(cfg.model)
+        self.dedup = M.Dedup()
         self.dm = self.bot.conversations_open(users=cfg.owner_user_id)["channel"]["id"]
         self._register()
 
@@ -127,9 +131,13 @@ class Violet:
             self.say(f":warning: Fehler: `{exc}`")
 
     def _on_message(self, event: dict) -> None:
+        channel = event.get("channel")
+        if channel in self.cfg.monitor_channels:
+            if event.get("subtype") in (None, "bot_message"):
+                self._guard(self.escalate, event)
+            return
         if event.get("subtype") not in (None, "file_share"):
             return
-        channel = event.get("channel")
         if channel == self.dm:
             if event.get("user") == self.cfg.owner_user_id and not event.get("bot_id"):
                 self._guard(self.handle_command, event.get("text") or "")
@@ -159,6 +167,11 @@ class Violet:
             on = m.group(1) in ("an", "on")
             self.store.set("live", on)
             self.say(f"Live-DMs {'an' if on else 'aus'}.")
+            return
+        if m := re.fullmatch(r"eskalation\s+(an|aus|on|off)", cmd):
+            on = m.group(1) in ("an", "on")
+            self.store.set("escalate", on)
+            self.say(f"Eskalation aus #monitoring-torz / #monitoring-wernau {'an' if on else 'aus'}.")
             return
 
         if state.get("mode") == "awaiting_focus":
@@ -469,6 +482,49 @@ class Violet:
             self.bot.chat_update(channel=self.dm, ts=message["ts"], text=message.get("text", ""), blocks=blocks)
 
         self._guard(run)
+
+    # ======================================================================
+    # Eskalation aus den Monitoring-Channels
+    # ======================================================================
+    def escalate(self, event: dict) -> None:
+        if not self.store.get("escalate", True):
+            return
+        channel, ts = event["channel"], event["ts"]
+        if done := M.closed(event):
+            return self.close_escalation(channel, ts, done)
+        for alert in M.alerts(event):
+            if not self.dedup.first(channel, alert["title"]):
+                continue
+            title = f"<{alert['link']}|{alert['title']}>" if alert.get("link") else alert["title"]
+            msg = (f":rotating_light: *Eskalation* aus <#{channel}> · "
+                   f"<{self.slack.permalink(channel, ts)}|im Channel öffnen>\n{title}")
+            dm_ts = self.say(msg)
+            open_ = self._open_escalations()
+            open_[dm_ts] = {"channel": channel, "key": M.key(alert["title"]),
+                            "title": alert["title"], "time": time.time()}
+            self.store.set("escalations", open_)
+            log.info("Eskaliert: %s (%s)", alert["title"], alert["pattern"])
+
+    def _open_escalations(self) -> dict:
+        """{dm_ts: {...}} – offene Eskalationen; ältere als 7 Tage fallen raus."""
+        cutoff = time.time() - 7 * 24 * 3600
+        return {k: v for k, v in (self.store.get("escalations") or {}).items() if v["time"] > cutoff}
+
+    def close_escalation(self, channel: str, ts: str, done: dict) -> None:
+        """„closed“ mit demselben Titel: die Eskalation(en) im Violet-Chat überschreiben."""
+        open_ = self._open_escalations()
+        k = M.key(done["title"])
+        hits = [dm_ts for dm_ts, e in open_.items() if e["channel"] == channel and e["key"] == k]
+        when = self.slack.fmt_time(ts)
+        by = f" von {done['by']}" if done["by"] else ""
+        for dm_ts in hits:
+            e = open_.pop(dm_ts)
+            text = (f":white_check_mark: *Closed*{by} um {when} · <#{channel}> · "
+                    f"<{self.slack.permalink(channel, ts)}|im Channel öffnen>\n~{e['title']}~")
+            self.bot.chat_update(channel=self.dm, ts=dm_ts, text=text)
+            log.info("Eskalation geschlossen: %s", e["title"])
+        self.dedup.forget(channel, done["title"])
+        self.store.set("escalations", open_)
 
     # ======================================================================
     def check_setup(self) -> list[str]:

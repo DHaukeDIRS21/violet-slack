@@ -33,6 +33,7 @@ class Config:
     allgemein_channel: str   # #allgemein
     sysadmin_channel: str    # #dirs21_sysadmin
     sysadmin_mention: str    # @sysmin – User- (U…) oder Gruppen-ID (S…), wird beim Weiterleiten erwähnt; leer = keine
+    monitor_channels: tuple  # #monitoring-torz, #monitoring-wernau (Eskalation)
     signature: str
     model: str
     data_dir: Path
@@ -48,7 +49,10 @@ class Config:
             focus_channel=_env("VIOLET_FOCUS_CHANNEL", "C07AW2F9ELT"),
             allgemein_channel=_env("VIOLET_ALLGEMEIN_CHANNEL", "C02PUPJ1CUX"),
             sysadmin_channel=_env("VIOLET_SYSADMIN_CHANNEL", "C0C465HRZB3"),
-            sysadmin_mention=_env("VIOLET_SYSADMIN_MENTION", "U0BQPJLUV34"),
+            sysadmin_mention=os.environ.get("VIOLET_SYSADMIN_MENTION", "U0BQPJLUV34").strip(),
+            monitor_channels=tuple(
+                c.strip() for c in _env("VIOLET_MONITOR_CHANNELS", "C051KH975T6,C0526PWJ3J4").split(",") if c.strip()
+            ),
             signature=_env("VIOLET_SIGNATURE", "Daniel"),
             model=_env("VIOLET_MODEL", "claude-opus-5-5"),
             data_dir=Path(_env("VIOLET_DATA_DIR", "./data")),

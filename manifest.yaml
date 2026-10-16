@@ -41,6 +41,7 @@ settings:
     user_events:
       - message.im          # neue DMs an dich (Live-Anzeige)
       - message.mpim
+      - message.groups      # #monitoring-torz / #monitoring-wernau (privat) → Eskalation
     bot_events:
       - message.im          # deine Befehle an Violet
   interactivity:
