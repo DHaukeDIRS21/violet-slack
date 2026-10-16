@@ -32,7 +32,7 @@ class Config:
     focus_channel: str       # #improver-squad
     allgemein_channel: str   # #allgemein
     sysadmin_channel: str    # #dirs21_sysadmin
-    sysadmin_group: str      # @Sysmin (User-Gruppe, wird beim Weiterleiten erwähnt; leer = keine)
+    sysadmin_mention: str    # @sysmin – User- (U…) oder Gruppen-ID (S…), wird beim Weiterleiten erwähnt; leer = keine
     signature: str
     model: str
     data_dir: Path
@@ -48,7 +48,7 @@ class Config:
             focus_channel=_env("VIOLET_FOCUS_CHANNEL", "C07AW2F9ELT"),
             allgemein_channel=_env("VIOLET_ALLGEMEIN_CHANNEL", "C02PUPJ1CUX"),
             sysadmin_channel=_env("VIOLET_SYSADMIN_CHANNEL", "C0C465HRZB3"),
-            sysadmin_group=_env("VIOLET_SYSADMIN_GROUP", "S07AHDLTN3A"),
+            sysadmin_mention=_env("VIOLET_SYSADMIN_MENTION", "U0BQPJLUV34"),
             signature=_env("VIOLET_SIGNATURE", "Daniel"),
             model=_env("VIOLET_MODEL", "claude-opus-5-5"),
             data_dir=Path(_env("VIOLET_DATA_DIR", "./data")),

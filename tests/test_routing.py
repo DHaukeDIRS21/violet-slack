@@ -80,11 +80,12 @@ def test_forward_text_format():
     from violet.app import forward_text
     draft = {"user": "UMAX", "text": "Hi Daniel, mein Outlook fragt …\n",
              "files": [{"name": "screenshot.png"}]}
-    assert forward_text("S07AHDLTN3A", draft) == (
-        "<!subteam^S07AHDLTN3A> :incoming_envelope: Anfrage von <@UMAX> (per DM an mich):\n"
+    assert forward_text("U0BQPJLUV34", draft) == (
+        "<@U0BQPJLUV34> :incoming_envelope: Anfrage von <@UMAX> (per DM an mich):\n"
         "Hi Daniel, mein Outlook fragt …\n"
         ":paperclip: screenshot.png"
     )
+    assert forward_text("S07AHDLTN3A", draft).startswith("<!subteam^S07AHDLTN3A> :incoming_envelope:")
     assert forward_text("", {"user": "UMAX", "text": "Hallo"}).startswith(":incoming_envelope: Anfrage von")
 
 
