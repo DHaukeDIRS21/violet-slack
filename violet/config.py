@@ -39,6 +39,9 @@ class Config:
     model: str
     data_dir: Path
     timezone: str
+    backend_url: str         # Violet-Backend (Avatar liest neue DMs vor); leer = aus
+    backend_token: str       # APP_API_TOKEN des Backends (X-API-Key)
+    backend_user: str
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -59,4 +62,7 @@ class Config:
             model=_env("VIOLET_MODEL", "claude-opus-5-5"),
             data_dir=Path(_env("VIOLET_DATA_DIR", "./data")),
             timezone=_env("VIOLET_TIMEZONE", "Europe/Berlin"),
+            backend_url=os.environ.get("VIOLET_BACKEND_URL", "").strip().rstrip("/"),
+            backend_token=os.environ.get("VIOLET_BACKEND_TOKEN", "").strip(),
+            backend_user=os.environ.get("VIOLET_BACKEND_USER", "danny").strip(),
         )

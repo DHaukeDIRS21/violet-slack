@@ -12,6 +12,7 @@ def violet(tmp_path):
     v = Violet.__new__(Violet)
     v.store = Store(tmp_path)
     v.say = MagicMock(return_value="1.0")
+    v.avatar = MagicMock()
     v.slack = MagicMock()
     v.slack.now.return_value = datetime(2026, 10, 15, 17, 0)  # Donnerstag
     for name in ("start_focus", "answer_focus", "digest", "update_focus", "focus_recap", "set_status",
@@ -125,6 +126,30 @@ def test_live_forward_shares_images(violet):
         channel="DVIOLET", thread_ts=None, content=b"png-bytes", filename="screen.png")
     draft = violet.store.get_draft(violet.say.call_args.args[1][1]["elements"][0]["value"])
     assert [f["id"] for f in draft["files"]] == ["F1", "F2", "F3"]
+
+
+def test_live_forward_reads_aloud_even_when_live_off(violet):
+    violet.cfg = MagicMock(owner_user_id="UMP9T403C")
+    violet.slack.name.side_effect = {"UTINA": "Tina", "UMAX": "Max"}.get
+    violet.store.set("live", False)
+    violet.live_forward({"user": "UTINA", "channel": "DTINA", "ts": "1.0",
+                         "channel_type": "im", "text": "Hast du <@UMAX> gesehen?"})
+    violet.avatar.announce.assert_called_once_with("Tina", "Hast du @Max gesehen?", None)
+    violet.say.assert_not_called()
+
+
+def test_live_forward_vorlesen_aus(violet):
+    violet.cfg = MagicMock(owner_user_id="UMP9T403C")
+    violet.store.set("speak", False)
+    violet.store.set("live", False)
+    violet.live_forward({"user": "UTINA", "channel": "DTINA", "ts": "1.0", "text": "Hi"})
+    violet.avatar.announce.assert_not_called()
+
+
+def test_vorlesen_command(violet):
+    violet.cfg = MagicMock(owner_user_id="UMP9T403C")
+    violet.handle_command("vorlesen aus")
+    assert violet.store.get("speak") is False
 
 
 def _client(scopes, user_id="UMP9T403C"):

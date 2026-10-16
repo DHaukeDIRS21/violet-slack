@@ -23,6 +23,7 @@ from slack_sdk.errors import SlackApiError
 from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
 
 from . import focus as F
+from .avatar import Avatar, plain
 from . import monitor as M
 from . import status as S
 from .config import Config, load_dotenv
@@ -42,6 +43,7 @@ HELP_TEXT = """*Was ich kann:*
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
+• `vorlesen an` / `vorlesen aus` – Violet-Avatar liest neue DMs vor (Standard: an)
 • `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau sofort hier melden (Standard: an)
 • Slack-Status: `ich geh laufen` · `ich muss ins RZ` · `Feierabend` (freitags „bis Montag“) · `bin unterwegs` · `ich fahre ins Büro` · `lasst mich in Ruhe` · `status weg`
   eigene: `status neu :fork_and_knife: Mittagspause = mittag, essen` · `status liste` · `status entfernen Mittagspause`
@@ -115,6 +117,7 @@ class Violet:
         self.store = Store(cfg.data_dir)
         self.slack = SlackOps(self.user, cfg.owner_user_id, cfg.focus_channel, cfg.timezone)
         self.llm = Claude(cfg.model)
+        self.avatar = Avatar(cfg.backend_url, cfg.backend_token, cfg.backend_user)
         self.dedup = M.Dedup()
         self.todos = TodoList(self.user, self.store, cfg.todo_list or None)
         self.dm = self.bot.conversations_open(users=cfg.owner_user_id)["channel"]["id"]
@@ -190,6 +193,12 @@ class Violet:
             on = m.group(1) in ("an", "on")
             self.store.set("live", on)
             self.say(f"Live-DMs {'an' if on else 'aus'}.")
+            return
+        if m := re.fullmatch(r"vorlesen\s+(an|aus|on|off)", cmd):
+            on = m.group(1) in ("an", "on")
+            self.store.set("speak", on)
+            hint = "" if self.avatar.enabled else " (VIOLET_BACKEND_URL/-TOKEN fehlen in der .env)"
+            self.say(f"Vorlesen durch den Violet-Avatar {'an' if on else 'aus'}.{hint}")
             return
         if m := re.fullmatch(r"eskalation\s+(an|aus|on|off)", cmd):
             on = m.group(1) in ("an", "on")
@@ -628,10 +637,13 @@ class Violet:
     # Live-DMs
     # ======================================================================
     def live_forward(self, event: dict) -> None:
-        if not self.store.get("live", True):
-            return
         sender = event.get("user")
         if not sender or sender == self.cfg.owner_user_id or event.get("bot_id"):
+            return
+        if self.store.get("speak", True):
+            group = "einer Gruppen-DM" if event.get("channel_type") == "mpim" else None
+            self.avatar.announce(self.slack.name(sender), plain(event.get("text") or "", self.slack.name), group)
+        if not self.store.get("live", True):
             return
         channel, ts = event["channel"], event["ts"]
         thread = event.get("thread_ts")
@@ -819,7 +831,7 @@ def _start(cfg: Config) -> None:
             log.warning("Start fehlgeschlagen (%s) – neuer Versuch in %s s", exc, delay)
         time.sleep(delay)
         delay = min(delay * 2, 300)
-    log.info("Violet läuft.")
+    log.info("Violet läuft. Vorlesen über Avatar: %s", "an" if violet.avatar.enabled else "nicht konfiguriert")
     violet.run()
 
 
