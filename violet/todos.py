@@ -81,14 +81,15 @@ class TodoList:
     def complete(self, row_id: str) -> None:
         info = self.meta()
         self._call("slackLists.items.update", list_id=info["id"],
-                   cells=[{"row_id": row_id, "column_id": info["done_col"], "checkbox": [True]}])
+                   cells=[{"row_id": row_id, "column_id": info["done_col"], "checkbox": True}])  # kein [True]!
 
 
 def _is_done(field: dict | None) -> bool:
     if not field:
         return False
-    if field.get("checkbox"):
-        return bool(field["checkbox"][0])
+    box = field.get("checkbox")
+    if box is not None:  # Slack liefert mal true, mal [true]
+        return bool(box[0] if isinstance(box, list) and box else box)
     return str(field.get("value")).lower() in ("true", "1", "yes", "completed")
 
 

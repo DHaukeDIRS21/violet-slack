@@ -76,7 +76,14 @@ def test_complete_sets_checkbox(todos):
     t, user = todos
     t.complete("Rec1")
     assert user.calls[-1] == ("slackLists.items.update", {
-        "list_id": "FLIST", "cells": [{"row_id": "Rec1", "column_id": "ColDone", "checkbox": [True]}]})
+        "list_id": "FLIST", "cells": [{"row_id": "Rec1", "column_id": "ColDone", "checkbox": True}]})
+
+
+def test_done_as_plain_bool(tmp_path):
+    item = _item("Rec9", "x")
+    item["fields"][1] = {"column_id": "ColDone", "checkbox": True}
+    t = TodoList(FakeUser([item]), Store(tmp_path))
+    assert t.open_items() == []
 
 
 def test_configured_list_reads_schema(tmp_path):
@@ -118,7 +125,7 @@ def test_suggest_and_take_while_answering(violet):
     blocks = _click(violet, "violet_todo_take", "Rec1", "VPN für Praktikant")
     assert violet.store.get("state")["todo_picks"] == ["VPN für Praktikant"]
     assert ("slackLists.items.update", {"list_id": "FLIST", "cells": [
-        {"row_id": "Rec1", "column_id": "ColDone", "checkbox": [True]}]}) in violet.todos.user.calls
+        {"row_id": "Rec1", "column_id": "ColDone", "checkbox": True}]}) in violet.todos.user.calls
     # nur dieser Eintrag ist ersetzt, die anderen Buttons bleiben
     assert not any(b.get("block_id") == "todo_Rec1" for b in blocks)
     assert any(b.get("block_id") == "todo_Rec3" for b in blocks)
