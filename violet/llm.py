@@ -30,7 +30,8 @@ Regeln:
 - Übernimm Formulierungen der Punkte wörtlich; korrigiere nur offensichtliche Tippfehler.
 - Erfinde keine Punkte. Ändere nur, was Daniel sagt.
 - Ordne Aussagen unscharf zu: "erledigt mailtastic" meint den Punkt, der Mailtastic enthält.
-- "erledigt"/"done"/"fertig" → done; "arbeite an"/"läuft"/"dran" → wip; "wartet"/"blockiert"/"pending" → waiting.
+- "erledigt"/"done"/"fertig" → done; "arbeite an"/"läuft"/"dran" → wip; "warte"/"warte auf"/"wartet"/"blockiert"/"pending" → waiting.
+  Beispiel: "warte VMWare" → der Punkt mit VMWare bekommt waiting (wird als :hourglass_flowing_sand: angezeigt).
 - Neue ungeplante Themen ohne Statusangabe bekommen wip.
 - Daniel schreibt Punkte meist auf Englisch, manchmal Deutsch – Sprache des Punkts beibehalten.
 """

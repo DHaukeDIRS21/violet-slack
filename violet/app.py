@@ -31,7 +31,7 @@ HELP_TEXT = """*Was ich kann:*
 • `focus` – Focus of the day für #improver-squad
 • `@channel :information_source: Titel` + Text – zweisprachiger Post in #allgemein
 • `allgemein: Text` – Post in #allgemein, unverändert
-• `status Mailtastic erledigt, arbeite an Prakti Laptop` – aktualisiert deinen heutigen Focus-Post
+• `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:)
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
@@ -52,7 +52,7 @@ REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "fi
 NOT_UNDERSTOOD = "Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
 
 STATUS_WORDS = re.compile(
-    r"\b(erledigt|done|fertig|arbeite an|arbeite am|in arbeit|läuft|wartet|warte auf|blockiert)\b",
+    r"\b(erledigt|done|fertig|arbeite an|arbeite am|in arbeit|läuft|wartet|warte|warten|blockiert)\b",
     re.IGNORECASE,
 )
 CHANNEL_MENTION = re.compile(r"^\s*(<!channel>|@channel)\s*", re.IGNORECASE)

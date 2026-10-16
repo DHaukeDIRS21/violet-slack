@@ -26,6 +26,8 @@ def violet(tmp_path):
     ("arbeite an Update Mailtastic artikel in Wiki", "update_focus",
      ("arbeite an Update Mailtastic artikel in Wiki",)),
     ("unplanned Drucker 2. OG erledigt", "update_focus", ("unplanned Drucker 2. OG erledigt",)),
+    ("warte VMWare lizenzing", "update_focus", ("warte VMWare lizenzing",)),
+    ("status warte VMWare", "update_focus", ("warte VMWare",)),
     ("<!channel> :information_source: Titel\nText", "start_announcement",
      ("<!channel> :information_source: Titel\nText",)),
 ])
