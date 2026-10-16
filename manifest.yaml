@@ -31,6 +31,7 @@ oauth_config:
       - files:write         # Bilder mit nach #dirs21_sysadmin weiterleiten
       - lists:read          # To-do-Liste lesen (Focus-Vorschläge)
       - lists:write         # To-do-Liste anlegen, Einträge abhaken
+      - users.profile:write # Slack-Status setzen („ich geh laufen“, „Feierabend“ …)
     bot:
       - chat:write
       - im:history

@@ -24,6 +24,7 @@ from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
 
 from . import focus as F
 from . import monitor as M
+from . import status as S
 from .config import Config, load_dotenv
 from .llm import Claude, LLMError
 from .slackops import SlackOps, make_client
@@ -42,6 +43,7 @@ HELP_TEXT = """*Was ich kann:*
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
 • `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau sofort hier melden (Standard: an)
+• Slack-Status: `ich geh laufen` · `ich muss ins RZ` · `Feierabend` (freitags „bis Montag“) · `bin unterwegs` · `ich fahre ins Büro` · `lasst mich in Ruhe` · `status weg`
 • `abbrechen` – laufenden Vorgang beenden
 Ich poste nie ohne deinen Klick auf :white_check_mark: Posten."""
 
@@ -54,7 +56,7 @@ FOCUS_QUESTIONS = """*Für heute – antworte in einer Nachricht:*
 
 REQUIRED_USER_SCOPES = {"chat:write", "channels:history", "im:history", "im:read",
                         "mpim:history", "mpim:read", "users:read", "files:read", "files:write",
-                        "groups:history", "lists:read", "lists:write"}
+                        "groups:history", "lists:read", "lists:write", "users.profile:write"}
 REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "files:write",
                        "canvases:write"}
 
@@ -195,6 +197,10 @@ class Violet:
             self.store.delete("state")
             return self.apply_edit(state["draft_id"], raw)
 
+        is_focus_cmd = cmd.startswith(("status ", "unplanned")) or STATUS_WORDS.search(raw)
+        if (preset := S.match(raw, self.slack.now().date())) and (preset["name"] == "clear" or not is_focus_cmd):
+            return self.set_status(preset)
+
         if cmd.startswith("allgemein:"):
             body = raw.split(":", 1)[1].strip()
             return self.preview({"kind": "allgemein", "text": body})
@@ -240,6 +246,16 @@ class Violet:
             "target_ts": existing["ts"] if existing else None,
             "root_ts": existing["root_ts"] if existing else None,
         })
+
+    # --- Slack-Status ------------------------------------------------------------
+    def set_status(self, preset: dict) -> None:
+        self.user.users_profile_set(profile={
+            "status_text": preset["text"], "status_emoji": preset["emoji"], "status_expiration": 0,
+        })
+        if preset["name"] == "clear":
+            self.say(":broom: Status gelöscht.")
+        else:
+            self.say(f":white_check_mark: Status gesetzt: {preset['emoji']} {preset['text']}")
 
     # --- To-dos als Focus-Vorschläge -----------------------------------------
     def suggest_todos(self) -> None:
