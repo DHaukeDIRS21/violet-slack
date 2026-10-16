@@ -60,7 +60,7 @@ def test_focus_answer_starting_with_recap_is_not_a_command(violet):
 def test_focus_answer_uses_state(violet):
     violet.store.set("state", {"mode": "awaiting_focus", "previous": {"info": "HO"}})
     violet.handle_command("Info: MyCorner\nFocus: Drucker")
-    violet.answer_focus.assert_called_once_with("Info: MyCorner\nFocus: Drucker", {"info": "HO"})
+    violet.answer_focus.assert_called_once_with("Info: MyCorner\nFocus: Drucker", {"info": "HO"}, [])
     assert violet.store.get("state") is None
 
 
@@ -80,7 +80,9 @@ def test_start_focus_prefers_today(tmp_path, today, last, shown):
     v.slack = MagicMock()
     v.slack.today_post.return_value = today
     v.slack.last_post.return_value = last
+    v.suggest_todos = MagicMock()
     v.start_focus()
+    v.suggest_todos.assert_called_once()
     assert f"Focus: {shown}" in v.say.call_args.args[0]
     assert v.store.get("state")["mode"] == "awaiting_focus"
 

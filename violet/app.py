@@ -5,6 +5,7 @@ Befehle per DM an Violet: siehe HELP_TEXT. Violet postet nie ohne Klick auf ✅ 
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -27,11 +28,12 @@ from .config import Config, load_dotenv
 from .llm import Claude, LLMError
 from .slackops import SlackOps, make_client
 from .store import Store
+from .todos import TodoList
 
 log = logging.getLogger("violet")
 
 HELP_TEXT = """*Was ich kann:*
-• `focus` – Focus of the day für #improver-squad (dein heutiger Focus steht immer im Canvas oben in diesem Chat – rechts als Seitenleiste öffnen)
+• `focus` – Focus of the day für #improver-squad, mit Vorschlägen aus deiner To-do-Liste (dein heutiger Focus steht immer im Canvas oben in diesem Chat – rechts als Seitenleiste öffnen)
 • `@channel :information_source: Titel` + Text – zweisprachiger Post in #allgemein
 • `allgemein: Text` – Post in #allgemein, unverändert
 • `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:)
@@ -52,7 +54,7 @@ FOCUS_QUESTIONS = """*Für heute – antworte in einer Nachricht:*
 
 REQUIRED_USER_SCOPES = {"chat:write", "channels:history", "im:history", "im:read",
                         "mpim:history", "mpim:read", "users:read", "files:read", "files:write",
-                        "groups:history"}
+                        "groups:history", "lists:read", "lists:write"}
 REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "files:write",
                        "canvases:write"}
 
@@ -111,6 +113,7 @@ class Violet:
         self.slack = SlackOps(self.user, cfg.owner_user_id, cfg.focus_channel, cfg.timezone)
         self.llm = Claude(cfg.model)
         self.dedup = M.Dedup()
+        self.todos = TodoList(self.user, self.store, cfg.todo_list or None)
         self.dm = self.bot.conversations_open(users=cfg.owner_user_id)["channel"]["id"]
         self._register()
 
@@ -127,6 +130,8 @@ class Violet:
         self.app.action("violet_edit")(self._on_edit)
         self.app.action("violet_cancel")(self._on_cancel)
         self.app.action("violet_forward")(self._on_forward)
+        self.app.action("violet_todo_take")(lambda ack, body: self._on_todo(ack, body, take=True))
+        self.app.action("violet_todo_defer")(lambda ack, body: self._on_todo(ack, body, take=False))
 
     def _guard(self, fn, *args) -> None:
         try:
@@ -185,7 +190,7 @@ class Violet:
 
         if state.get("mode") == "awaiting_focus":
             self.store.delete("state")
-            return self.answer_focus(raw, state.get("previous"))
+            return self.answer_focus(raw, state.get("previous"), state.get("todo_picks") or [])
         if state.get("mode") == "awaiting_edit":
             self.store.delete("state")
             return self.apply_edit(state["draft_id"], raw)
@@ -215,8 +220,16 @@ class Violet:
         self.store.set("state", {"mode": "awaiting_focus", "previous": previous})
         intro = f"*{label}:*\n{last['text']}\n\n" if last else "_Keinen früheren Post gefunden._\n\n"
         self.say(intro + FOCUS_QUESTIONS)
+        try:
+            self.suggest_todos()
+        except Exception as exc:  # noqa: BLE001 – Focus soll auch ohne To-do-Liste gehen
+            log.warning("To-dos nicht geladen: %s", exc)
+            self.say(f"_Deine To-do-Liste konnte ich nicht lesen ({exc})._")
 
-    def answer_focus(self, answer: str, previous: dict | None) -> None:
+    def answer_focus(self, answer: str, previous: dict | None, todo_picks: list[str] | None = None) -> None:
+        if todo_picks:
+            answer += "\n\nZusätzliche neue Focus-Ziele aus meinen To-dos (Status open):\n" + \
+                      "\n".join(f"- {t}" for t in todo_picks)
         self.say(":hourglass_flowing_sand: Baue deinen Focus …")
         today = self.slack.now().strftime("%A, %d.%m.%Y")
         post = self.llm.new_focus_post(previous, answer, today)
@@ -227,6 +240,71 @@ class Violet:
             "target_ts": existing["ts"] if existing else None,
             "root_ts": existing["root_ts"] if existing else None,
         })
+
+    # --- To-dos als Focus-Vorschläge -----------------------------------------
+    def suggest_todos(self) -> None:
+        meta = self.todos.meta()
+        today = self.slack.now().date().isoformat()
+        deferred = {k for k, d in (self.store.get("todo_deferred") or {}).items() if d == today}
+        items = [i for i in self.todos.open_items() if i["id"] not in deferred]
+        link = self.todos.permalink(meta["id"])
+        list_ref = f"<{link}|To-do-Liste>" if link else "To-do-Liste"
+        if meta.get("created"):
+            self.say(f":clipboard: Ich habe dir eine Slack-Liste {list_ref} angelegt. Trag dort deine To-dos ein "
+                     "(auch per Nachricht → *Zu Liste hinzufügen*) – beim `focus` schlage ich sie dir vor.")
+        if not items:
+            return
+        shown = items[:10]
+        blocks = [{"type": "section", "text": {"type": "mrkdwn", "text":
+                   f":clipboard: *Offene To-dos* aus deiner {list_ref} – in den Focus aufnehmen?"
+                   + (f" _(die ersten 10 von {len(items)})_" if len(items) > 10 else "")}}]
+        for item in shown:
+            title = item["title"][:200] + (" …" if len(item["title"]) > 200 else "")
+            text = f"• {title}" + (f"  <{item['link']}|Nachricht>" if item.get("link") else "")
+            value = json.dumps({"id": item["id"], "t": item["title"][:1500]}, ensure_ascii=False)
+            blocks += [
+                {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                {"type": "actions", "block_id": f"todo_{item['id']}", "elements": [
+                    {"type": "button", "action_id": "violet_todo_take", "value": value, "style": "primary",
+                     "text": {"type": "plain_text", "text": "➕ Aufnehmen"}},
+                    {"type": "button", "action_id": "violet_todo_defer", "value": value,
+                     "text": {"type": "plain_text", "text": "⏸ Zurückstellen"}},
+                ]},
+            ]
+        self.say(f"{len(items)} offene To-dos", blocks)
+
+    def _on_todo(self, ack, body, take: bool) -> None:
+        ack()
+        action = body["actions"][0]
+        item = json.loads(action["value"])
+        message = body.get("message", {})
+
+        def run():
+            if take:
+                self.todos.complete(item["id"])
+                state = self.store.get("state") or {}
+                if state.get("mode") == "awaiting_focus":
+                    state.setdefault("todo_picks", []).append(item["t"])
+                    self.store.set("state", state)
+                    note = ":heavy_plus_sign: Kommt in deinen Focus · in der Liste abgehakt"
+                elif self.slack.today_post():
+                    note = ":heavy_plus_sign: Wird in deinen heutigen Post aufgenommen · in der Liste abgehakt"
+                    self.update_focus(f"Neues Focus-Ziel (Status open): {item['t']}")
+                else:
+                    note = ":heavy_plus_sign: In der Liste abgehakt – starte `focus`, um es einzutragen"
+            else:
+                deferred = self.store.get("todo_deferred") or {}
+                today = self.slack.now().date().isoformat()
+                deferred = {k: d for k, d in deferred.items() if d == today}
+                deferred[item["id"]] = today
+                self.store.set("todo_deferred", deferred)
+                note = ":double_vertical_bar: Zurückgestellt – morgen wieder"
+            blocks = [{"type": "context", "elements": [{"type": "mrkdwn", "text": note}]}
+                      if b.get("block_id") == action.get("block_id") else b
+                      for b in message.get("blocks", [])]
+            self.bot.chat_update(channel=self.dm, ts=message["ts"], text=message.get("text", ""), blocks=blocks)
+
+        self._guard(run)
 
     def update_focus(self, instruction: str) -> None:
         existing = self.slack.today_post()

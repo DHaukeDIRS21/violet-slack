@@ -29,6 +29,8 @@ oauth_config:
       - users:read
       - files:read          # Bilder aus DMs laden
       - files:write         # Bilder mit nach #dirs21_sysadmin weiterleiten
+      - lists:read          # To-do-Liste lesen (Focus-Vorschläge)
+      - lists:write         # To-do-Liste anlegen, Einträge abhaken
     bot:
       - chat:write
       - im:history

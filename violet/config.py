@@ -34,6 +34,7 @@ class Config:
     sysadmin_channel: str    # #dirs21_sysadmin
     sysadmin_mention: str    # @sysmin – User- (U…) oder Gruppen-ID (S…), wird beim Weiterleiten erwähnt; leer = keine
     monitor_channels: tuple  # #monitoring-torz, #monitoring-wernau (Eskalation)
+    todo_list: str           # Slack-Liste mit deinen To-dos (leer = Violet legt „To-dos“ an)
     signature: str
     model: str
     data_dir: Path
@@ -50,6 +51,7 @@ class Config:
             allgemein_channel=_env("VIOLET_ALLGEMEIN_CHANNEL", "C02PUPJ1CUX"),
             sysadmin_channel=_env("VIOLET_SYSADMIN_CHANNEL", "C0C465HRZB3"),
             sysadmin_mention=os.environ.get("VIOLET_SYSADMIN_MENTION", "U0BQPJLUV34").strip(),
+            todo_list=os.environ.get("VIOLET_TODO_LIST", "").strip(),
             monitor_channels=tuple(
                 c.strip() for c in _env("VIOLET_MONITOR_CHANNELS", "C051KH975T6,C0526PWJ3J4").split(",") if c.strip()
             ),
