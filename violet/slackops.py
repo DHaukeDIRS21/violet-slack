@@ -127,6 +127,20 @@ class SlackOps:
                 return {"ts": reply["ts"], "root_ts": root["ts"], "text": reply.get("text", "")}
         return None
 
+    def posts_since(self, days: int) -> list[dict]:
+        """Deine Focus-Posts der letzten `days` Tage (inkl. heute), älteste zuerst: [{'ts', 'text'}]."""
+        posts, seen_days = [], set()
+        for root in self._focus_roots(self.day_start(self.now() - timedelta(days=days))):
+            reply = self._my_reply(root["ts"])
+            if not reply:
+                continue
+            day = datetime.fromtimestamp(float(reply["ts"]), self.tz).date()
+            if day in seen_days:  # pro Tag zählt der neueste Post
+                continue
+            seen_days.add(day)
+            posts.append({"ts": reply["ts"], "text": reply.get("text", "")})
+        return sorted(posts, key=lambda p: float(p["ts"]))
+
     # --- DMs ------------------------------------------------------------------
     def _dm_channels(self, skip: set[str]) -> list[dict]:
         channels, cursor = [], None

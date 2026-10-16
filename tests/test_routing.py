@@ -11,7 +11,7 @@ def violet(tmp_path):
     v = Violet.__new__(Violet)
     v.store = Store(tmp_path)
     v.say = MagicMock(return_value="1.0")
-    for name in ("start_focus", "answer_focus", "digest", "update_focus",
+    for name in ("start_focus", "answer_focus", "digest", "update_focus", "focus_recap",
                  "start_announcement", "preview", "apply_edit"):
         setattr(v, name, MagicMock())
     return v
@@ -21,6 +21,8 @@ def violet(tmp_path):
     ("focus", "start_focus", ()),
     ("digest", "digest", (None,)),
     ("digest 48", "digest", (48,)),
+    ("recap", "focus_recap", (3,)),
+    ("Recap 4 Wochen", "focus_recap", (4,)),
     ("status Mailtastic erledigt", "update_focus", ("Mailtastic erledigt",)),
     ("erledigt fix broken laptop", "update_focus", ("erledigt fix broken laptop",)),
     ("arbeite an Update Mailtastic artikel in Wiki", "update_focus",
@@ -46,6 +48,13 @@ def test_help_and_unknown(violet):
 def test_allgemein_unchanged(violet):
     violet.handle_command("allgemein: Kuchen in der Küche")
     violet.preview.assert_called_once_with({"kind": "allgemein", "text": "Kuchen in der Küche"})
+
+
+def test_focus_answer_starting_with_recap_is_not_a_command(violet):
+    violet.store.set("state", {"mode": "awaiting_focus", "previous": None})
+    violet.handle_command("Recap: alles erledigt\nFocus: Drucker")
+    violet.focus_recap.assert_not_called()
+    violet.answer_focus.assert_called_once()
 
 
 def test_focus_answer_uses_state(violet):

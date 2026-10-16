@@ -11,7 +11,7 @@ import re
 import sys
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -35,6 +35,7 @@ HELP_TEXT = """*Was ich kann:*
 • `allgemein: Text` – Post in #allgemein, unverändert
 • `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:)
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
+• `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
 • `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau sofort hier melden (Standard: an)
@@ -163,6 +164,8 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
+        if m := re.fullmatch(r"recap(?:\s+(\d+))?(?:\s*(?:w|wochen?))?", cmd):
+            return self.focus_recap(int(m.group(1)) if m.group(1) else 3)
         if m := re.fullmatch(r"digest(?:\s+(\d+))?\s*h?", cmd):
             return self.digest(int(m.group(1)) if m.group(1) else None)
         if m := re.fullmatch(r"live\s+(an|aus|on|off)", cmd):
@@ -247,6 +250,21 @@ class Violet:
         return self.slack.permalink(ch, ts, root)
 
     _canvas_lock = threading.Lock()  # Timer und „Posten“-Klick nicht gleichzeitig
+
+    def focus_recap(self, weeks: int) -> None:
+        weeks = max(1, min(weeks, 12))
+        self.say(f":hourglass_flowing_sand: Sammle deine Focus-Posts der letzten {weeks} Wochen …")
+        posts = self.slack.posts_since(weeks * 7)
+        if not posts:
+            self.say(f"Keine Focus-Posts von dir in den letzten {weeks} Wochen gefunden.")
+            return
+        days = [self.slack.fmt_time(p["ts"], True).split()[0] for p in posts]
+        period = f"{days[0]} – {days[-1]}"
+        text = "\n\n".join(f"### Post vom {F.WEEKDAYS[datetime.fromtimestamp(float(p['ts']), self.slack.tz).weekday()]}, "
+                           f"{d}\n{p['text']}" for p, d in zip(posts, days))
+        summary = self.llm.focus_recap(text, period)
+        out = f":checkered_flag: *Focus-Recap* {period} ({len(posts)} Posts)\n\n{summary}"
+        self.say(out, [{"type": "section", "text": {"type": "mrkdwn", "text": p}} for p in chunk(out)])
 
     def refresh_focus_canvas(self) -> None:
         """Den heutigen Focus in den Canvas des Violet-Chats schreiben (rechts als Seitenleiste öffnen)."""

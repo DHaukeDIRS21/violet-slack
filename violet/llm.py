@@ -109,6 +109,24 @@ Alles, was die Anweisung nicht betrifft, bleibt exakt gleich (Text, Reihenfolge,
         )
         return self._json(system, user, POST_SCHEMA)
 
+    def focus_recap(self, posts: str, period: str) -> str:
+        system = FOCUS_RULES + f"""
+Aufgabe: Fasse Daniels Focus-Posts aus dem Zeitraum {period} für ihn zusammen (Deutsch, du-Form).
+Slack-mrkdwn: *fett* für Überschriften, • für Punkte, keine #-Überschriften, keine Tabellen.
+Keine eigene Titelzeile – beginne direkt mit dem ersten Abschnitt.
+Gliederung:
+*:white_check_mark: Erledigt* – nach Themen gruppiert, mit ungefährem Zeitpunkt (z. B. „KW 41“ oder Datum).
+*:construction: Läuft noch* – Punkte, deren letzter Status wip oder open ist; nenne, seit wann sie mitlaufen.
+*:hourglass_flowing_sand: Wartet* – Punkte mit letztem Status waiting.
+*:zap: Ungeplantes* – was unter Other Topics dazukam; Häufungen benennen (z. B. „3× Drucker“).
+*:mag: Auffällig* – 1–3 kurze Beobachtungen: Dauerbrenner, die seit vielen Tagen mitgezogen werden,
+  Wochen mit viel Ungeplantem, Dinge ohne Fortschritt. Weglassen, wenn nichts auffällt.
+Regeln: Punkte desselben Themas über die Tage zusammenführen; ein Punkt kann auf mehreren Tagen
+stehen – maßgeblich ist der letzte Stand. Wiederkehrendes wie „Daily SysAdmin Requests“ nur einmal kurz.
+Nichts erfinden; Formulierungen der Punkte möglichst beibehalten. Abschnitte ohne Inhalt weglassen.
+"""
+        return self._create(system, posts, effort="medium")
+
     # --- #allgemein -------------------------------------------------------
     def bilingual_announcement(self, title: str, body: str, signature: str) -> str:
         system = f"""\
