@@ -75,6 +75,22 @@ def quote(text: str, limit: int = 400) -> str:
     return "\n".join("> " + line for line in text.splitlines()) or "> "
 
 
+def forward_text(group: str, draft: dict) -> str:
+    """Weiterleitung nach #dirs21_sysadmin:
+    @Sysmin :incoming_envelope: Anfrage von @Name (per DM an mich):
+    <Text>
+    :paperclip: datei.png"""
+    mention = f"<!subteam^{group}> " if group else ""
+    text = draft.get("text", "").strip()
+    if len(text) > 3500:
+        text = text[:3500].rstrip() + " …"
+    lines = [f"{mention}:incoming_envelope: Anfrage von <@{draft['user']}> (per DM an mich):"]
+    if text:
+        lines.append(text)
+    lines += [f":paperclip: {f.get('name') or 'Datei'}" for f in draft.get("files") or []]
+    return "\n".join(lines)
+
+
 class Violet:
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -444,9 +460,7 @@ class Violet:
                 self.say("Diese Nachricht ist nicht mehr da.")
                 return
             ch = self.cfg.sysadmin_channel
-            ts = self.user.chat_postMessage(
-                channel=ch, text=f":incoming_envelope: Anfrage von <@{draft['user']}>:\n{quote(draft['text'], 3500)}"
-            )["ts"]
+            ts = self.user.chat_postMessage(channel=ch, text=forward_text(self.cfg.sysadmin_group, draft))["ts"]
             self.share_images(self.user, ch, draft.get("files") or [], thread_ts=ts)
             self.store.delete_draft(draft_id)
             blocks = [b for b in message.get("blocks", []) if b.get("type") != "actions"]

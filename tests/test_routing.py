@@ -76,6 +76,18 @@ def test_start_focus_prefers_today(tmp_path, today, last, shown):
     assert v.store.get("state")["mode"] == "awaiting_focus"
 
 
+def test_forward_text_format():
+    from violet.app import forward_text
+    draft = {"user": "UMAX", "text": "Hi Daniel, mein Outlook fragt …\n",
+             "files": [{"name": "screenshot.png"}]}
+    assert forward_text("S07AHDLTN3A", draft) == (
+        "<!subteam^S07AHDLTN3A> :incoming_envelope: Anfrage von <@UMAX> (per DM an mich):\n"
+        "Hi Daniel, mein Outlook fragt …\n"
+        ":paperclip: screenshot.png"
+    )
+    assert forward_text("", {"user": "UMAX", "text": "Hallo"}).startswith(":incoming_envelope: Anfrage von")
+
+
 def test_live_forward_shares_images(violet):
     violet.cfg = MagicMock(owner_user_id="UMP9T403C")
     violet.dm = "DVIOLET"
