@@ -19,6 +19,7 @@ from slack_bolt import App
 from slack_bolt.error import BoltError
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk.errors import SlackApiError
+from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
 
 from . import focus as F
 from . import monitor as M
@@ -55,7 +56,9 @@ REQUIRED_USER_SCOPES = {"chat:write", "channels:history", "im:history", "im:read
 REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "files:write",
                        "canvases:write"}
 
-NOT_UNDERSTOOD = "Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
+CANVAS_TITLE = "Daily Focus"
+
+NOT_UNDERSTOOD ="Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
 
 STATUS_WORDS = re.compile(
     r"\b(erledigt|done|fertig|arbeite an|arbeite am|in arbeit|läuft|wartet|warte|warten|blockiert)\b",
@@ -102,6 +105,7 @@ class Violet:
         self.cfg = cfg
         self.app = App(token=cfg.bot_token)
         self.bot = self.app.client
+        self.bot.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=3))
         self.user = make_client(cfg.user_token)
         self.store = Store(cfg.data_dir)
         self.slack = SlackOps(self.user, cfg.owner_user_id, cfg.focus_channel, cfg.timezone)
@@ -281,23 +285,38 @@ class Violet:
         canvas_id = self.store.get("canvas_id")
         if canvas_id:
             try:
-                self.bot.canvases_edit(canvas_id=canvas_id,
-                                       changes=[{"operation": "replace", "document_content": doc}])
+                self._write_canvas(canvas_id, doc)
             except SlackApiError as exc:
                 if exc.response.get("error") not in ("canvas_not_found", "file_not_found", "invalid_canvas"):
                     raise
                 canvas_id = None
         if not canvas_id:
             try:
-                canvas_id = self.bot.conversations_canvases_create(channel_id=self.dm, document_content=doc)["canvas_id"]
+                canvas_id = self.bot.conversations_canvases_create(
+                    channel_id=self.dm, title=CANVAS_TITLE, document_content=doc)["canvas_id"]
             except SlackApiError as exc:
                 if exc.response.get("error") != "channel_canvas_already_exists":
                     raise
-                canvas_id = self.bot.conversations_info(channel=self.dm)["channel"]["properties"]["canvas"]["file_id"]
-                self.bot.canvases_edit(canvas_id=canvas_id,
-                                       changes=[{"operation": "replace", "document_content": doc}])
+                # der Bot-Token hat kein im:read – Canvas-ID über deinen Token holen
+                canvas_id = self.user.conversations_info(channel=self.dm)["channel"]["properties"]["canvas"]["file_id"]
+                self._write_canvas(canvas_id, doc)
         self.store.set("canvas_id", canvas_id)
         self.store.set("canvas_md", md)
+
+    def _write_canvas(self, canvas_id: str, doc: dict) -> None:
+        """Nur den Text unter dem Titel austauschen – Titel, Titelbild und Aussehen bleiben."""
+        edit = lambda change: self.bot.canvases_edit(canvas_id=canvas_id, changes=[change])  # noqa: E731
+        try:
+            title, old = self.slack.canvas_blocks(canvas_id)
+        except (SlackApiError, RuntimeError) as exc:
+            log.warning("Canvas-Aufbau nicht lesbar (%s) – ersetze den ganzen Inhalt", exc)
+            title, old = None, []
+        if not title:
+            edit({"operation": "replace", "document_content": doc})
+            return
+        edit({"operation": "insert_after", "section_id": title, "document_content": doc})
+        for block in old:
+            edit({"operation": "delete", "section_id": block})
 
     def _canvas_loop(self) -> None:
         # Auch Änderungen, die du direkt in Slack machst, landen so im Canvas.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -20,6 +21,51 @@ def make_client(token: str) -> WebClient:
     client = WebClient(token=token)
     client.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=3))
     return client
+
+
+class _TopLevelIds(HTMLParser):
+    """IDs der löschbaren Blöcke in <div class="quip-canvas-content">: Überschriften/Absätze direkt,
+    bei Listen jeder Listenpunkt (<li>) – die ID der Liste selbst lässt sich nicht löschen."""
+
+    VOID = {"br", "img", "hr", "input", "meta", "link"}
+
+    def __init__(self):
+        super().__init__()
+        self.ids: list[str] = []
+        self._depth = 0          # Tiefe relativ zum Inhalts-div (0 = außerhalb)
+        self._collect = False    # in einem Listen-Block: <li>-IDs sammeln
+        self._first: str | None = None
+        self._found = False
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if self._depth == 0:
+            if tag == "div" and "quip-canvas-content" in (a.get("class") or ""):
+                self._depth = 1
+            return
+        if tag in self.VOID:
+            return
+        if self._depth == 1:
+            if a.get("id") and tag not in ("ul", "ol"):
+                self.ids.append(a["id"])
+            else:
+                self._collect, self._first, self._found = True, a.get("id"), False
+        elif self._collect:
+            if tag == "li" and a.get("id"):
+                self.ids.append(a["id"])
+                self._found = True
+            elif self._first is None and a.get("id"):
+                self._first = a["id"]
+        self._depth += 1
+
+    def handle_endtag(self, tag):
+        if self._depth == 0 or tag in self.VOID:
+            return
+        self._depth -= 1
+        if self._depth == 1 and self._collect:
+            if not self._found and self._first:
+                self.ids.append(self._first)
+            self._collect = False
 
 
 class SlackOps:
@@ -59,8 +105,9 @@ class SlackOps:
                 self._names[user_id] = user_id
         return self._names[user_id]
 
-    def download(self, file: dict) -> bytes | None:
-        """Inhalt einer Slack-Datei (mit dem User-Token, braucht `files:read`); None, wenn's nicht geht."""
+    def download(self, file: dict, html_ok: bool = False) -> bytes | None:
+        """Inhalt einer Slack-Datei (mit dem User-Token, braucht `files:read`); None, wenn's nicht geht.
+        `html_ok` für Canvases – deren Inhalt ist selbst HTML."""
         url = file.get("url_private_download") or file.get("url_private")
         try:
             if not url:  # z. B. file_access=check_file_info
@@ -68,11 +115,23 @@ class SlackOps:
             req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.user.token}"})
             with urllib.request.urlopen(req, timeout=30) as resp:
                 # ohne Berechtigung liefert Slack eine HTML-Loginseite statt der Datei
-                if resp.headers.get_content_type().startswith("text/html"):
+                if resp.headers.get_content_type().startswith("text/html") and not html_ok:
                     return None
                 return resp.read()
         except (SlackApiError, OSError, KeyError, TypeError, ValueError):
             return None
+
+    def canvas_blocks(self, canvas_id: str) -> tuple[str | None, list[str]]:
+        """(ID des Titelblocks, IDs aller Blöcke darunter) eines Canvas – aus dessen HTML (User-Token, files:read)."""
+        file = self.user.files_info(file=canvas_id)["file"]
+        title = next((b.get("block_id") for b in file.get("title_blocks") or []), None)
+        data = self.download(file, html_ok=True)
+        html = data.decode("utf-8", "replace") if data else ""
+        if "quip-canvas-content" not in html:  # z. B. Loginseite statt Canvas
+            raise RuntimeError("Canvas-Inhalt nicht lesbar")
+        parser = _TopLevelIds()
+        parser.feed(html)
+        return title, [i for i in parser.ids if i != title]
 
     def fmt_time(self, ts: str, with_date: bool = False) -> str:
         dt = datetime.fromtimestamp(float(ts), self.tz)

@@ -132,8 +132,8 @@ WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"
 
 
 def render_markdown(post: dict | None, day, link: str | None = None) -> str:
-    """Canvas im Violet-Chat: der heutige Focus, Focus-Punkte zuerst."""
-    lines = [f"# :dart: Focus – {WEEKDAYS[day.weekday()]}, {day:%d.%m.%Y}", ""]
+    """Inhalt des Canvas „Daily Focus“ im Violet-Chat (unter dem Titel): der heutige Focus, Focus-Punkte zuerst."""
+    lines = [f"# {WEEKDAYS[day.weekday()]}, {day:%d.%m.%Y}", ""]
     if post is None:
         lines.append("_Heute noch kein Focus-Post – schreib Violet `focus`._")
         return "\n".join(lines)
