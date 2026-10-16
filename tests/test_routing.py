@@ -58,6 +58,22 @@ def test_live_toggle(violet):
     assert violet.store.get("live") is False
 
 
+@pytest.mark.parametrize("today,last,shown", [
+    ({"text": "Focus: heute", "ts": "2", "root_ts": "2"}, {"text": "Focus: gestern"}, "heute"),
+    (None, {"text": "Focus: gestern", "ts": "1", "root_ts": "1"}, "gestern"),
+])
+def test_start_focus_prefers_today(tmp_path, today, last, shown):
+    v = Violet.__new__(Violet)
+    v.store = Store(tmp_path)
+    v.say = MagicMock()
+    v.slack = MagicMock()
+    v.slack.today_post.return_value = today
+    v.slack.last_post.return_value = last
+    v.start_focus()
+    assert f"Focus: {shown}" in v.say.call_args.args[0]
+    assert v.store.get("state")["mode"] == "awaiting_focus"
+
+
 def test_live_forward_shares_images(violet):
     violet.cfg = MagicMock(owner_user_id="UMP9T403C")
     violet.dm = "DVIOLET"

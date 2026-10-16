@@ -169,10 +169,13 @@ class Violet:
     # Focus of the day
     # ======================================================================
     def start_focus(self) -> None:
-        last = self.slack.last_post()
+        # Gibt es heute schon einen Post, ist der der aktuelle Stand (und wird beim Posten aktualisiert).
+        last, label = self.slack.today_post(), "Dein heutiger Post (wird aktualisiert)"
+        if not last:
+            last, label = self.slack.last_post(), "Dein letzter Post"
         previous = F.parse_post(last["text"]) if last else None
         self.store.set("state", {"mode": "awaiting_focus", "previous": previous})
-        intro = f"*Dein letzter Post:*\n{last['text']}\n\n" if last else "_Keinen früheren Post gefunden._\n\n"
+        intro = f"*{label}:*\n{last['text']}\n\n" if last else "_Keinen früheren Post gefunden._\n\n"
         self.say(intro + FOCUS_QUESTIONS)
 
     def answer_focus(self, answer: str, previous: dict | None) -> None:
