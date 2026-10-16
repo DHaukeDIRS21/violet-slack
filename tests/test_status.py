@@ -68,6 +68,47 @@ def test_focus_commands_are_not_status(violet):
     assert violet.update_focus.call_count == 2
 
 
+def test_parse_new():
+    assert S.parse_new("status neu :fork_and_knife: Mittagspause = mittag, essen oder lunch") == {
+        "emoji": ":fork_and_knife:", "text": "Mittagspause", "words": ["mittag", "essen", "lunch"]}
+    assert S.parse_new("status neu :man-biking::skin-tone-2: Radtour =rad")["emoji"] == ":man-biking::skin-tone-2:"
+    assert S.parse_new("status neu Mittagspause = mittag") is None       # ohne Emoji
+    assert S.parse_new("status neu :x: Mittagspause") is None            # ohne Wörter
+
+
+def test_custom_add_use_change_remove(violet):
+    violet.handle_command("status neu :fork_and_knife: Mittagspause = mittag, essen")
+    assert "angelegt" in violet.say.call_args.args[0]
+    violet.handle_command("ich geh essen")
+    violet.user.users_profile_set.assert_called_with(profile={
+        "status_text": "Mittagspause", "status_emoji": ":fork_and_knife:", "status_expiration": 0})
+    # gleicher Text → ersetzt, nicht doppelt
+    violet.handle_command("status neu :hamburger: Mittagspause = mittag, lunch")
+    assert "geändert" in violet.say.call_args.args[0]
+    assert len(violet.store.get("custom_status")) == 1
+    violet.handle_command("status liste")
+    listing = violet.say.call_args.args[0]
+    assert ":hamburger: Mittagspause ← mittag, lunch" in listing and "datacenter" in listing
+    violet.handle_command("status entfernen Mittagspause")
+    assert violet.store.get("custom_status") == []
+    violet.user.users_profile_set.reset_mock()
+    violet.handle_command("lunch")
+    violet.user.users_profile_set.assert_not_called()
+
+
+def test_custom_overrides_builtin(violet):
+    violet.handle_command("status neu :runner: Lauftreff = laufen")
+    violet.handle_command("ich geh laufen")
+    assert violet.user.users_profile_set.call_args.kwargs["profile"]["status_text"] == "Lauftreff"
+
+
+def test_remove_builtin_and_bad_syntax(violet):
+    violet.handle_command("status entfernen datacenter")
+    assert "Eingebaute" in violet.say.call_args.args[0]
+    violet.handle_command("status neu Mittagspause")
+    assert "So legst du einen Status an" in violet.say.call_args.args[0]
+
+
 def test_status_clear(violet):
     violet.handle_command("status weg")
     violet.user.users_profile_set.assert_called_once_with(profile={

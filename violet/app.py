@@ -44,6 +44,7 @@ HELP_TEXT = """*Was ich kann:*
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
 • `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau sofort hier melden (Standard: an)
 • Slack-Status: `ich geh laufen` · `ich muss ins RZ` · `Feierabend` (freitags „bis Montag“) · `bin unterwegs` · `ich fahre ins Büro` · `lasst mich in Ruhe` · `status weg`
+  eigene: `status neu :fork_and_knife: Mittagspause = mittag, essen` · `status liste` · `status entfernen Mittagspause`
 • `abbrechen` – laufenden Vorgang beenden
 Ich poste nie ohne deinen Klick auf :white_check_mark: Posten."""
 
@@ -175,6 +176,12 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
+        if S.LIST.match(raw):
+            return self.say(S.listing(self.store.get("custom_status") or []))
+        if re.match(r"^\s*status\s+(neu|hinzufügen|hinzufuegen|add)\b", raw, re.IGNORECASE):
+            return self.status_add(raw)
+        if m := S.REMOVE.match(raw):
+            return self.status_remove(m.group("text"))
         if m := re.fullmatch(r"recap(?:\s+(\d+))?(?:\s*(?:w|wochen?))?", cmd):
             return self.focus_recap(int(m.group(1)) if m.group(1) else 3)
         if m := re.fullmatch(r"digest(?:\s+(\d+))?\s*h?", cmd):
@@ -198,7 +205,8 @@ class Violet:
             return self.apply_edit(state["draft_id"], raw)
 
         is_focus_cmd = cmd.startswith(("status ", "unplanned")) or STATUS_WORDS.search(raw)
-        if (preset := S.match(raw, self.slack.now().date())) and (preset["name"] == "clear" or not is_focus_cmd):
+        preset = S.match(raw, self.slack.now().date(), self.store.get("custom_status") or [])
+        if preset and (preset["name"] == "clear" or not is_focus_cmd):
             return self.set_status(preset)
 
         if cmd.startswith("allgemein:"):
@@ -256,6 +264,28 @@ class Violet:
             self.say(":broom: Status gelöscht.")
         else:
             self.say(f":white_check_mark: Status gesetzt: {preset['emoji']} {preset['text']}")
+
+    def status_add(self, raw: str) -> None:
+        new = S.parse_new(raw)
+        if not new:
+            self.say("So legst du einen Status an: `status neu :fork_and_knife: Mittagspause = mittag, essen`\n"
+                     "(Emoji, Statustext, `=`, dann die Wörter, auf die ich reagieren soll – durch Komma getrennt)")
+            return
+        custom = self.store.get("custom_status") or []
+        replaced = any(c["text"].lower() == new["text"].lower() for c in custom)
+        self.store.set("custom_status", S.add_custom(custom, new))
+        self.say(f":white_check_mark: Status {'geändert' if replaced else 'angelegt'}: {new['emoji']} {new['text']}\n"
+                 f"Ich reagiere auf: {', '.join(new['words'])} – probier's mit „{new['words'][0]}“.")
+
+    def status_remove(self, text: str) -> None:
+        custom, hit = S.remove_custom(self.store.get("custom_status") or [], text)
+        if not hit:
+            builtin = any(t and t.lower() == text.strip().lower() for _, _, t, _, _ in S.PRESETS)
+            self.say("Eingebaute Status kann ich nicht entfernen – leg einen eigenen mit denselben Wörtern an, "
+                     "der hat Vorrang." if builtin else f"Keinen eigenen Status „{text}“ gefunden. `status liste` zeigt alle.")
+            return
+        self.store.set("custom_status", custom)
+        self.say(f":wastebasket: Status entfernt: {hit['emoji']} {hit['text']}")
 
     # --- To-dos als Focus-Vorschläge -----------------------------------------
     def suggest_todos(self) -> None:
