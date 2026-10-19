@@ -154,6 +154,21 @@ def render_markdown(post: dict | None, day, link: str | None = None) -> str:
     return "\n".join(lines).rstrip()
 
 
+def split_topics(text: str) -> list[str]:
+    """„VPN Praktikant, Drucker 2. OG“ → ['VPN Praktikant', 'Drucker 2. OG']"""
+    return [t.strip(" •-*\t") for t in re.split(r"[,;\n]", text or "") if t.strip(" •-*\t")]
+
+
+def add_focus_items(post: dict, topics: list[str]) -> dict:
+    """Vergessene Themen unter Focus anhängen (Status open) – vor wiederkehrenden Punkten wie
+    „Daily SysAdmin Requests“; schon vorhandene Punkte werden nicht doppelt eingetragen."""
+    focus = list(post.get("focus", []))
+    known = {i["text"].strip().lower() for i in focus}
+    new = [{"text": t, "status": "open"} for t in topics if t.lower() not in known]
+    pos = next((n for n, i in enumerate(focus) if "daily sysadmin" in i["text"].lower()), len(focus))
+    return {**post, "focus": focus[:pos] + new + focus[pos:]}
+
+
 def looks_like_focus_post(text: str) -> bool:
     low = (text or "").lower()
     return "info:" in low and "focus" in low

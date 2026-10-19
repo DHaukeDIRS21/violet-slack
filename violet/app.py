@@ -39,6 +39,7 @@ HELP_TEXT = """*Was ich kann:*
 • `focus` – Focus of the day für #improver-squad, mit Vorschlägen aus deiner To-do-Liste (dein heutiger Focus steht immer im Canvas oben in diesem Chat – rechts als Seitenleiste öffnen)
 • `@channel :information_source: Titel` + Text – zweisprachiger Post in #allgemein
 • `allgemein: Text` – Post in #allgemein, unverändert
+• `focus + VPN für Praktikant, Drucker 2. OG` (oder `ergänze …`) – vergessene Themen unter Focus :dart: ergänzen
 • `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:)
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
@@ -73,6 +74,10 @@ NOT_UNDERSTOOD ="Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“,
 STATUS_WORDS = re.compile(
     r"\b(erledigt|done|fertig|arbeite an|arbeite am|in arbeit|läuft|wartet|warte|warten|blockiert)\b",
     re.IGNORECASE,
+)
+FOCUS_PLUS = re.compile(
+    r"^\s*(?:focus\s*\+|focus\s+(?:ergänzen|ergänze|ergaenze|plus)|ergänze|ergänzen|ergaenze)\s*:?\s*(?P<topics>\S.*)$",
+    re.IGNORECASE | re.DOTALL,
 )
 CHANNEL_MENTION = re.compile(r"^\s*(<!channel>|@channel)\s*", re.IGNORECASE)
 
@@ -182,6 +187,8 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
+        if m := FOCUS_PLUS.match(raw):
+            return self.add_to_focus(F.split_topics(m.group("topics")))
         if cmd in ("arbeitszeit", "arbeitszeiten"):
             return self.show_work_time()
         if S.LIST.match(raw):
@@ -256,7 +263,7 @@ class Violet:
 
     def answer_focus(self, answer: str, previous: dict | None, todo_picks: list[str] | None = None) -> None:
         if todo_picks:
-            answer += "\n\nZusätzliche neue Focus-Ziele aus meinen To-dos (Status open):\n" + \
+            answer += "\n\nZusätzliche neue Focus-Ziele (Status open):\n" + \
                       "\n".join(f"- {t}" for t in todo_picks)
         self.say(":hourglass_flowing_sand: Baue deinen Focus …")
         today = self.slack.now().strftime("%A, %d.%m.%Y")
@@ -391,6 +398,25 @@ class Violet:
             self.bot.chat_update(channel=self.dm, ts=message["ts"], text=message.get("text", ""), blocks=blocks)
 
         self._guard(run)
+
+    def add_to_focus(self, topics: list[str]) -> None:
+        """Vergessene Themen unter Focus :dart: ergänzen – ohne Claude, der Rest bleibt exakt gleich."""
+        if not topics:
+            self.say("Was soll in den Focus? Z. B. `focus + VPN für Praktikant, Drucker 2. OG`")
+            return
+        state = self.store.get("state") or {}
+        if state.get("mode") == "awaiting_focus":  # Focus wird gerade gebaut → mit in die Antwort
+            state["todo_picks"] = (state.get("todo_picks") or []) + topics
+            self.store.set("state", state)
+            self.say(f":heavy_plus_sign: Kommt mit in deinen Focus: {', '.join(topics)}")
+            return
+        existing = self.slack.today_post()
+        if not existing:
+            self.say("Ich finde heute noch keinen Focus-Post von dir. Starte mit `focus`.")
+            return
+        post = F.add_focus_items(F.parse_post(existing["text"]), topics)
+        self.preview({"kind": "focus", "post": post,
+                      "target_ts": existing["ts"], "root_ts": existing["root_ts"]})
 
     def update_focus(self, instruction: str) -> None:
         existing = self.slack.today_post()
