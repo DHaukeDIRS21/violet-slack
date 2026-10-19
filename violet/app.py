@@ -26,6 +26,7 @@ from . import focus as F
 from .avatar import Avatar, plain
 from . import monitor as M
 from . import status as S
+from . import worktime as W
 from .config import Config, load_dotenv
 from .llm import Claude, LLMError
 from .slackops import SlackOps, make_client
@@ -42,7 +43,8 @@ HELP_TEXT = """*Was ich kann:*
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
-• `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
+• `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an; außerhalb der Arbeitszeit nur VIPs)
+• `arbeitszeit` – Mo–Fr 8:00 bis 17:30 oder „Feierabend“; danach nur VIPs und Monitoring-Alerts
 • `vorlesen an` / `vorlesen aus` – Violet-Avatar liest neue DMs vor (Standard: an)
 • `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau sofort hier melden (Standard: an)
 • Slack-Status: `ich geh laufen` · `ich muss ins RZ` · `Feierabend` (freitags „bis Montag“) · `bin unterwegs` · `ich fahre ins Büro` · `lasst mich in Ruhe` · `status weg`
@@ -64,6 +66,7 @@ REQUIRED_BOT_SCOPES = {"chat:write", "im:history", "im:write", "users:read", "fi
                        "canvases:write"}
 
 CANVAS_TITLE = "Daily Focus"
+S_WEEKDAY = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 NOT_UNDERSTOOD ="Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
 
@@ -179,6 +182,8 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
+        if cmd in ("arbeitszeit", "arbeitszeiten"):
+            return self.show_work_time()
         if S.LIST.match(raw):
             return self.say(S.listing(self.store.get("custom_status") or []))
         if re.match(r"^\s*status\s+(neu|hinzufügen|hinzufuegen|add)\b", raw, re.IGNORECASE):
@@ -266,13 +271,39 @@ class Violet:
 
     # --- Slack-Status ------------------------------------------------------------
     def set_status(self, preset: dict) -> None:
+        now = self.slack.now()
+        expiration = 0
+        if preset["name"] == "feierabend":
+            # Arbeitszeit endet jetzt; der Status läuft zum nächsten Arbeitsbeginn ab
+            start = W.parse_hhmm(self.cfg.work_start)
+            expiration = int(W.next_work_start(now, start).timestamp())
+            self.store.set("feierabend_day", now.date().isoformat())
+        elif preset["name"] == "clear":
+            self.store.delete("feierabend_day")
         self.user.users_profile_set(profile={
-            "status_text": preset["text"], "status_emoji": preset["emoji"], "status_expiration": 0,
+            "status_text": preset["text"], "status_emoji": preset["emoji"], "status_expiration": expiration,
         })
         if preset["name"] == "clear":
             self.say(":broom: Status gelöscht.")
+        elif preset["name"] == "feierabend":
+            until = datetime.fromtimestamp(expiration, now.tzinfo)
+            self.say(f":white_check_mark: Status gesetzt: {preset['emoji']} {preset['text']}\n"
+                     f":crescent_moon: Feierabend – bis {S_WEEKDAY[until.weekday()]} {until:%H:%M} melde ich nur "
+                     "noch VIPs und Monitoring-Alerts.")
         else:
             self.say(f":white_check_mark: Status gesetzt: {preset['emoji']} {preset['text']}")
+
+    def is_work_time(self) -> bool:
+        return W.is_work_time(self.slack.now(), W.parse_hhmm(self.cfg.work_start),
+                              W.parse_hhmm(self.cfg.work_end), self.store.get("feierabend_day"))
+
+    def show_work_time(self) -> None:
+        state = "läuft" if self.is_work_time() else "vorbei – nur VIPs und Monitoring-Alerts"
+        if self.store.get("feierabend_day") == self.slack.now().date().isoformat():
+            state = "Feierabend – nur VIPs und Monitoring-Alerts (`status weg` holt dich zurück)"
+        self.say(f":clock8: *Arbeitszeit* Mo–Fr {self.cfg.work_start}–{self.cfg.work_end} "
+                 f"(oder bis „Feierabend“). Gerade: {state}.\n"
+                 f"VIPs: {', '.join(f'<@{u}>' for u in self.cfg.vip_users)}")
 
     def status_add(self, raw: str) -> None:
         new = S.parse_new(raw)
@@ -638,7 +669,11 @@ class Violet:
     # ======================================================================
     def live_forward(self, event: dict) -> None:
         sender = event.get("user")
-        if not sender or sender == self.cfg.owner_user_id or event.get("bot_id"):
+        vip = sender in self.cfg.vip_users
+        if not sender or sender == self.cfg.owner_user_id or (event.get("bot_id") and not vip):
+            return
+        if not vip and not self.is_work_time():
+            log.info("Live-DM von %s außerhalb der Arbeitszeit – nicht gemeldet (kommt im Digest)", sender)
             return
         if self.store.get("speak", True):
             group = "einer Gruppen-DM" if event.get("channel_type") == "mpim" else None

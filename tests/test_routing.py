@@ -15,6 +15,7 @@ def violet(tmp_path):
     v.avatar = MagicMock()
     v.slack = MagicMock()
     v.slack.now.return_value = datetime(2026, 10, 15, 17, 0)  # Donnerstag
+    v.is_work_time = MagicMock(return_value=True)  # Arbeitszeit: eigene Tests in test_worktime.py
     for name in ("start_focus", "answer_focus", "digest", "update_focus", "focus_recap", "set_status",
                  "start_announcement", "preview", "apply_edit"):
         setattr(v, name, MagicMock())

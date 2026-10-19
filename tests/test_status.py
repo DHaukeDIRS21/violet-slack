@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -49,7 +50,8 @@ def violet(tmp_path):
     v.say = MagicMock()
     v.user = MagicMock()
     v.slack = MagicMock()
-    v.slack.now.return_value = datetime(2026, 10, 16, 17, 30)  # Freitag
+    v.slack.now.return_value = datetime(2026, 10, 16, 17, 30, tzinfo=ZoneInfo("Europe/Berlin"))  # Freitag
+    v.cfg = MagicMock(work_start="08:00", work_end="17:30")
     v.update_focus = MagicMock()
     return v
 
@@ -57,7 +59,8 @@ def violet(tmp_path):
 def test_feierabend_on_friday_sets_profile(violet):
     violet.handle_command("Feierabend")
     violet.user.users_profile_set.assert_called_once_with(profile={
-        "status_text": "Feierabend - bis Montag", "status_emoji": ":x:", "status_expiration": 0})
+        "status_text": "Feierabend - bis Montag", "status_emoji": ":x:",
+        "status_expiration": int(datetime(2026, 10, 19, 8, 0, tzinfo=ZoneInfo("Europe/Berlin")).timestamp())})
     assert "Status gesetzt" in violet.say.call_args.args[0]
 
 

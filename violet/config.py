@@ -35,6 +35,9 @@ class Config:
     sysadmin_mention: str    # @sysmin – User- (U…) oder Gruppen-ID (S…), wird beim Weiterleiten erwähnt; leer = keine
     monitor_channels: tuple  # #monitoring-torz, #monitoring-wernau (Eskalation)
     todo_list: str           # Slack-Liste mit deinen To-dos (leer = Violet legt „To-dos“ an)
+    vip_users: tuple         # kommen auch außerhalb der Arbeitszeit durch
+    work_start: str          # "08:00"
+    work_end: str            # "17:30" (oder früher per „Feierabend“)
     signature: str
     model: str
     data_dir: Path
@@ -55,6 +58,12 @@ class Config:
             sysadmin_channel=_env("VIOLET_SYSADMIN_CHANNEL", "C0C465HRZB3"),
             sysadmin_mention=os.environ.get("VIOLET_SYSADMIN_MENTION", "U0BQPJLUV34").strip(),
             todo_list=os.environ.get("VIOLET_TODO_LIST", "").strip(),
+            # Adrian Reuter, Volker Staas, David Heidelberg, Linda Fröhlich, Sysmin, Violet
+            vip_users=tuple(u.strip() for u in _env(
+                "VIOLET_VIP_USERS", "UC5PF0VFG,U06VCFXEA7R,UL6ACNPH7,U02QJHFER6Y,U0BQPJLUV34,U0C91N5R3RU"
+            ).split(",") if u.strip()),
+            work_start=_env("VIOLET_WORK_START", "08:00"),
+            work_end=_env("VIOLET_WORK_END", "17:30"),
             monitor_channels=tuple(
                 c.strip() for c in _env("VIOLET_MONITOR_CHANNELS", "C051KH975T6,C0526PWJ3J4").split(",") if c.strip()
             ),
