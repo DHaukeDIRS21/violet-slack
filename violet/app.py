@@ -696,7 +696,8 @@ class Violet:
     def live_forward(self, event: dict) -> None:
         sender = event.get("user")
         vip = sender in self.cfg.vip_users
-        if not sender or sender == self.cfg.owner_user_id or (event.get("bot_id") and not vip):
+        wanted_bot = vip or sender in self.cfg.forward_bots
+        if not sender or sender == self.cfg.owner_user_id or (event.get("bot_id") and not wanted_bot):
             return
         if not vip and not self.is_work_time():
             log.info("Live-DM von %s außerhalb der Arbeitszeit – nicht gemeldet (kommt im Digest)", sender)

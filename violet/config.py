@@ -36,6 +36,7 @@ class Config:
     monitor_channels: tuple  # #monitoring-torz, #monitoring-wernau (Eskalation)
     todo_list: str           # Slack-Liste mit deinen To-dos (leer = Violet legt „To-dos“ an)
     vip_users: tuple         # kommen auch außerhalb der Arbeitszeit durch
+    forward_bots: tuple      # Bots, deren DMs wie normale DMs gemeldet werden (andere Bots nicht)
     work_start: str          # "08:00"
     work_end: str            # "17:30" (oder früher per „Feierabend“)
     signature: str
@@ -62,6 +63,9 @@ class Config:
             vip_users=tuple(u.strip() for u in _env(
                 "VIOLET_VIP_USERS", "UC5PF0VFG,U06VCFXEA7R,UL6ACNPH7,U02QJHFER6Y,U0BQPJLUV34,U0C91N5R3RU"
             ).split(",") if u.strip()),
+            # Charging Agent
+            forward_bots=tuple(u.strip() for u in os.environ.get(
+                "VIOLET_FORWARD_BOTS", "U0B6N9LMZUM").split(",") if u.strip()),
             work_start=_env("VIOLET_WORK_START", "08:00"),
             work_end=_env("VIOLET_WORK_END", "17:30"),
             monitor_channels=tuple(

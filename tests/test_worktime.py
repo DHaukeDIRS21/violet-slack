@@ -47,7 +47,7 @@ def violet(tmp_path):
     v.bot = MagicMock()
     v.user = MagicMock()
     v.dm = "DVIOLET"
-    v.cfg = MagicMock(owner_user_id="UME", vip_users=("UADRIAN", "USYSMIN"),
+    v.cfg = MagicMock(owner_user_id="UME", vip_users=("UADRIAN", "USYSMIN"), forward_bots=("UCHARGING",),
                       work_start="08:00", work_end="17:30")
     v.slack = MagicMock()
     v.slack.name.return_value = "Jemand"
@@ -77,6 +77,15 @@ def test_vip_bot_gets_through_other_bots_not(violet):
     violet.live_forward(dm("UANDERERBOT", bot_id="B1"))
     violet.say.assert_not_called()
     violet.live_forward(dm("USYSMIN", bot_id="B2"))
+    assert violet.say.call_count == 1
+
+
+def test_forward_bot_like_normal_dm(violet):
+    violet.slack.now.return_value = at(19, 10)
+    violet.live_forward(dm("UCHARGING", bot_id="B0B6V9G5L84"))
+    assert violet.say.call_count == 1
+    violet.slack.now.return_value = at(19, 19)           # nach Feierabendzeit: wie normale DMs stumm
+    violet.live_forward(dm("UCHARGING", bot_id="B0B6V9G5L84"))
     assert violet.say.call_count == 1
 
 
