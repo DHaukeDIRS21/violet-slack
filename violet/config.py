@@ -37,6 +37,7 @@ class Config:
     todo_list: str           # Slack-Liste mit deinen To-dos (leer = Violet legt „To-dos“ an)
     vip_users: tuple         # kommen auch außerhalb der Arbeitszeit durch
     forward_bots: tuple      # Bots, deren DMs wie normale DMs gemeldet werden (andere Bots nicht)
+    wrike_bot: str           # Wrike-App: zugewiesen/erwähnt melden, aktualisiert ignorieren
     work_start: str          # "08:00"
     work_end: str            # "17:30" (oder früher per „Feierabend“)
     signature: str
@@ -66,6 +67,7 @@ class Config:
             # Charging Agent
             forward_bots=tuple(u.strip() for u in os.environ.get(
                 "VIOLET_FORWARD_BOTS", "U0B6N9LMZUM").split(",") if u.strip()),
+            wrike_bot=os.environ.get("VIOLET_WRIKE_BOT", "U037VHMEV41").strip(),
             work_start=_env("VIOLET_WORK_START", "08:00"),
             work_end=_env("VIOLET_WORK_END", "17:30"),
             monitor_channels=tuple(

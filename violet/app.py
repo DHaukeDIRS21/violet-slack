@@ -27,6 +27,7 @@ from .avatar import Avatar, plain
 from . import monitor as M
 from . import status as S
 from . import worktime as W
+from . import wrike as WR
 from .config import Config, load_dotenv
 from .llm import Claude, LLMError
 from .slackops import SlackOps, make_client
@@ -168,6 +169,8 @@ class Violet:
         if channel == self.dm:
             if event.get("user") == self.cfg.owner_user_id and not event.get("bot_id"):
                 self._guard(self.handle_command, event.get("text") or "")
+        elif event.get("channel_type") == "im" and self.cfg.wrike_bot and event.get("user") == self.cfg.wrike_bot:
+            self._guard(self.wrike_forward, event)
         elif event.get("channel_type") in ("im", "mpim"):
             self._guard(self.live_forward, event)
 
@@ -731,6 +734,17 @@ class Violet:
             }]},
         ])
         self.share_images(self.bot, self.dm, files)
+
+    def wrike_forward(self, event: dict) -> None:
+        """Wrike: neues Ticket (zugewiesen) und Kommentar (erwähnt) melden – „aktualisiert“ ignorieren."""
+        item = WR.parse(event.get("text") or "")
+        if not item:
+            return
+        if not self.store.get("live", True) or not self.is_work_time():
+            log.info("Wrike-Meldung außerhalb der Arbeitszeit/Live aus – nicht gemeldet: %s", item["title"])
+            return
+        msg = WR.render(item)
+        self.say(msg, [{"type": "section", "text": {"type": "mrkdwn", "text": msg}}])
 
     def share_images(self, client, channel: str, files: list[dict], thread_ts: str | None = None) -> None:
         """Bilder aus einer DM in `channel` hochladen. Klappt das nicht (fehlende Scopes),
