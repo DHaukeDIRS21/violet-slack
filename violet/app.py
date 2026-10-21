@@ -81,6 +81,8 @@ FOCUS_PLUS = re.compile(
     r"^\s*(?:focus\s*\+|focus\s+(?:ergänzen|ergänze|ergaenze|plus)|ergänze|ergänzen|ergaenze)\s*:?\s*(?P<topics>\S.*)$",
     re.IGNORECASE | re.DOTALL,
 )
+# „focus GPO Timeserver“ (einzeilig, ohne Doppelpunkt) = focus + … – „Focus: …“ bleibt eine Focus-Antwort
+FOCUS_BARE = re.compile(r"^\s*focus\s+(?P<topics>[^\s:][^\n]*?)\s*$", re.IGNORECASE)
 CHANNEL_MENTION = re.compile(r"^\s*(<!channel>|@channel)\s*", re.IGNORECASE)
 
 
@@ -191,8 +193,8 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
-        if m := FOCUS_PLUS.match(raw):
-            return self.add_to_focus(F.split_topics(m.group("topics")))
+        if m := FOCUS_PLUS.match(raw) or FOCUS_BARE.match(raw):
+            return self.add_to_focus(F.split_topics(m.group("topics").strip().strip('"„“')))
         if cmd in ("arbeitszeit", "arbeitszeiten"):
             return self.show_work_time()
         if S.LIST.match(raw):
@@ -252,7 +254,7 @@ class Violet:
     # ======================================================================
     def start_focus(self) -> None:
         # Gibt es heute schon einen Post, ist der der aktuelle Stand (und wird beim Posten aktualisiert).
-        last, label = self.slack.today_post(), "Dein heutiger Post (wird aktualisiert)"
+        last, label = self.slack.today_post(), "Dein heutiger Post (wird ergänzt – der Recap bleibt)"
         if not last:
             last, label = self.slack.last_post(), "Dein letzter Post"
         previous = F.parse_post(last["text"]) if last else None
@@ -270,9 +272,17 @@ class Violet:
             answer += "\n\nZusätzliche neue Focus-Ziele (Status open):\n" + \
                       "\n".join(f"- {t}" for t in todo_picks)
         self.say(":hourglass_flowing_sand: Baue deinen Focus …")
-        today = self.slack.now().strftime("%A, %d.%m.%Y")
-        post = self.llm.new_focus_post(previous, answer, today)
         existing = self.slack.today_post()
+        if existing:
+            # Heute schon gepostet: nur ergänzen. Neu bauen würde den Recap aus dem heutigen Focus
+            # erzeugen statt aus dem von gestern – der Recap bleibt deshalb fest.
+            current = F.parse_post(existing["text"])
+            post = self.llm.edit_focus_post(current, "Ergänzungen/Änderungen für heute (Recap nicht anfassen):\n"
+                                            + answer)
+            post["recap"] = current["recap"]
+        else:
+            today = self.slack.now().strftime("%A, %d.%m.%Y")
+            post = self.llm.new_focus_post(previous, answer, today)
         self.preview({
             "kind": "focus",
             "post": post,

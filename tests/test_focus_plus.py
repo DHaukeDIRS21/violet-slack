@@ -62,6 +62,40 @@ def test_command_updates_todays_post(violet, cmd):
     assert "VPN für Praktikant" in [i["text"] for i in draft["post"]["focus"]]
 
 
+@pytest.mark.parametrize("cmd,topic", [
+    ("focus GPO Timeserver and Printer Leipzig", "GPO Timeserver and Printer Leipzig"),
+    ("Focus Install RustDesk on Cancellara-02", "Install RustDesk on Cancellara-02"),
+    ('focus "Install RustDesk on Cancellara-02"', "Install RustDesk on Cancellara-02"),
+])
+def test_bare_focus_topic_adds(violet, cmd, topic):
+    violet.handle_command(cmd)
+    assert topic in [i["text"] for i in violet.preview.call_args.args[0]["post"]["focus"]]
+
+
+def test_focus_colon_answer_is_not_bare_command(violet):
+    violet.store.set("state", {"mode": "awaiting_focus", "previous": None})
+    violet.answer_focus = MagicMock()
+    violet.handle_command("Focus: Drucker")
+    violet.answer_focus.assert_called_once()
+
+
+def test_second_focus_today_keeps_recap(violet):
+    """Nachgestellt vom 21.10.: zweites `focus` mit heutigem Post darf den Recap nicht neu bauen."""
+    violet.suggest_todos = MagicMock()
+    violet.llm = MagicMock()
+    edited = F.parse_post(POST)
+    edited["recap"] = [{"text": "Schedule Bogy", "status": "open"}]   # Claude „baut“ falschen Recap
+    edited["focus"].append({"text": "GPO Timeserver", "status": "open"})
+    violet.llm.edit_focus_post.return_value = edited
+    violet.start_focus()
+    assert "der Recap bleibt" in violet.say.call_args_list[0].args[0]
+    violet.handle_command("1 MyCorner\n3 GPO Timeserver")
+    violet.llm.new_focus_post.assert_not_called()
+    post = violet.preview.call_args.args[0]["post"]
+    assert post["recap"] == F.parse_post(POST)["recap"]                # Recap unverändert
+    assert "GPO Timeserver" in [i["text"] for i in post["focus"]]
+
+
 def test_command_while_answering_focus(violet):
     violet.store.set("state", {"mode": "awaiting_focus", "previous": None, "todo_picks": ["Aus To-do"]})
     violet.handle_command("focus + Drucker 2. OG, Mailtastic")
