@@ -21,6 +21,7 @@ STATUS_EMOJI = {
     "done": ":white_check_mark:",
     "wip": ":construction:",
     "waiting": ":hourglass_flowing_sand:",
+    "cancelled": ":x:",
     "open": "",
 }
 EMOJI_STATUS = {v: k for k, v in STATUS_EMOJI.items() if v}

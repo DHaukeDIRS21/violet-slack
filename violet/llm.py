@@ -24,7 +24,8 @@ Daniel ist SysAdmin bei DIRS21. Der Post hat die Abschnitte:
 - other: ungeplante Themen ("Other Topics (unplanned)").
 - sos: Hilferufe ans Team (optional, sonst leer).
 - information: Infos ans Team (optional, sonst leer).
-Jeder Punkt hat einen Status: done (erledigt), wip (in Arbeit), waiting (wartet/blockiert), open (noch nicht begonnen).
+Jeder Punkt hat einen Status: done (erledigt), wip (in Arbeit), waiting (wartet/blockiert),
+cancelled (abgesagt/abgebrochen/hat sich erledigt, angezeigt als :x:), open (noch nicht begonnen).
 
 Regeln:
 - Übernimm Formulierungen der Punkte wörtlich; korrigiere nur offensichtliche Tippfehler.
@@ -32,6 +33,9 @@ Regeln:
 - Ordne Aussagen unscharf zu: "erledigt mailtastic" meint den Punkt, der Mailtastic enthält.
 - "erledigt"/"done"/"fertig" → done; "arbeite an"/"läuft"/"dran" → wip; "warte"/"warte auf"/"wartet"/"blockiert"/"pending" → waiting.
   Beispiel: "warte VMWare" → der Punkt mit VMWare bekommt waiting (wird als :hourglass_flowing_sand: angezeigt).
+- "abgesagt"/"abgebrochen"/"hat sich erledigt"/"erledigt sich"/"fällt aus"/"entfällt"/"storniert"/"cancelled"
+  → cancelled (:x:). Achtung: "hat sich erledigt" ist NICHT done, sondern cancelled.
+  Beispiel: "Bogy abgesagt" → der Punkt mit Bogy bekommt cancelled.
 - Neue ungeplante Themen ohne Statusangabe bekommen wip.
 - Daniel schreibt Punkte meist auf Englisch, manchmal Deutsch – Sprache des Punkts beibehalten.
 """
@@ -84,7 +88,7 @@ class Claude:
 Aufgabe: Erstelle den Post für HEUTE aus dem letzten Post und Daniels Antwort.
 - recap = die focus-Punkte des letzten Posts, mit den Status, die Daniel nennt.
   Ohne Angabe bleibt der Status, wie er war. Ungeplante Themen vom letzten Post nicht in recap.
-- focus = Daniels neue Ziele für heute, danach alle recap-Punkte, die nicht done sind
+- focus = Daniels neue Ziele für heute, danach alle recap-Punkte, die nicht done oder cancelled sind
   (mit ihrem Status). Wiederkehrendes wie "Daily SysAdmin Requests" bleibt mit wip drin.
   Neue Ziele haben Status open.
 - other = nur ungeplante Themen, die Daniel heute nennt.
@@ -118,6 +122,7 @@ Gliederung:
 *:white_check_mark: Erledigt* – nach Themen gruppiert, mit ungefährem Zeitpunkt (z. B. „KW 41“ oder Datum).
 *:construction: Läuft noch* – Punkte, deren letzter Status wip oder open ist; nenne, seit wann sie mitlaufen.
 *:hourglass_flowing_sand: Wartet* – Punkte mit letztem Status waiting.
+*:x: Abgesagt* – Punkte mit letztem Status cancelled (abgesagt/hat sich erledigt).
 *:zap: Ungeplantes* – was unter Other Topics dazukam; Häufungen benennen (z. B. „3× Drucker“).
 *:mag: Auffällig* – 1–3 kurze Beobachtungen: Dauerbrenner, die seit vielen Tagen mitgezogen werden,
   Wochen mit viel Ungeplantem, Dinge ohne Fortschritt. Weglassen, wenn nichts auffällt.

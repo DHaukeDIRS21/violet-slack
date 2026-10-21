@@ -40,7 +40,7 @@ HELP_TEXT = """*Was ich kann:*
 • `@channel :information_source: Titel` + Text – zweisprachiger Post in #allgemein
 • `allgemein: Text` – Post in #allgemein, unverändert
 • `focus + VPN für Praktikant, Drucker 2. OG` (oder `ergänze …`) – vergessene Themen unter Focus :dart: ergänzen
-• `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:)
+• `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:, abgesagt/abgebrochen/hat sich erledigt :x:)
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
@@ -72,7 +72,8 @@ S_WEEKDAY = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag
 NOT_UNDERSTOOD ="Das habe ich nicht verstanden. Z. B. „Mailtastic erledigt“, `focus`, `digest` – oder `hilfe`."
 
 STATUS_WORDS = re.compile(
-    r"\b(erledigt|done|fertig|arbeite an|arbeite am|in arbeit|läuft|wartet|warte|warten|blockiert)\b",
+    r"\b(erledigt|done|fertig|arbeite an|arbeite am|in arbeit|läuft|wartet|warte|warten|blockiert"
+    r"|abgesagt|abgebrochen|fällt aus|faellt aus|entfällt|entfaellt|storniert|cancelled|canceled)\b",
     re.IGNORECASE,
 )
 FOCUS_PLUS = re.compile(

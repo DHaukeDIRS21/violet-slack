@@ -19,6 +19,14 @@ Other Topics :zustimmen: (unplanned):
 :information_source::"""
 
 
+def test_cancelled_roundtrip():
+    post = F.parse_post(POST.replace("• Schedule Bogy\n", "• Schedule Bogy :x:\n"))
+    bogy = next(i for i in post["focus"] if i["text"] == "Schedule Bogy")
+    assert bogy["status"] == "cancelled"
+    assert "• Schedule Bogy :x:" in F.render_post(post)
+    assert "cancelled" in F.POST_SCHEMA["properties"]["focus"]["items"]["properties"]["status"]["enum"]
+
+
 def test_split_topics():
     assert F.split_topics("VPN für Praktikant, Drucker 2. OG; • Mailtastic") == \
         ["VPN für Praktikant", "Drucker 2. OG", "Mailtastic"]
