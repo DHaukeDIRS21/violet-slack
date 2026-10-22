@@ -174,6 +174,8 @@ Gib jedes bestellte Gericht mit allen Bestellungen (Person, Anzahl, Sonderwunsch
 Regeln:
 - Gleiche Gerichte zusammenfassen, auch bei unterschiedlicher Schreibweise ("Margherita", "Pizza Margh.").
   Unterschiedliche Größen/Varianten bleiben getrennt. Nimm den Namen, wie er auf einer Karte stehen würde.
+- "Bowl of the Month" (auch "Bowl des Monats", "Monatsbowl", "BotM") ist IMMER ein eigenes Gericht
+  namens "Bowl of the Month" – nie mit anderen Bowls zusammenfassen, auch wenn Zutaten genannt werden.
 - "Ich auch", "+1", "dasselbe wie X", ein Daumen-Hoch-Text o. Ä. → gleiche Bestellung wie der Bezug.
 - Spätere Änderungen/Abbestellungen derselben Person ersetzen die frühere Bestellung.
 - Wer mehrere Gerichte bestellt, taucht bei jedem Gericht auf. "2x"/"zwei" → count 2.
