@@ -38,6 +38,8 @@ class Config:
     vip_users: tuple         # kommen auch außerhalb der Arbeitszeit durch
     forward_bots: tuple      # Bots, deren DMs wie normale DMs gemeldet werden (andere Bots nicht)
     wrike_bot: str           # Wrike-App: zugewiesen/erwähnt melden, aktualisiert ignorieren
+    outlook_bot: str         # Outlook-Calendar-App: Tagesübersicht → Termin-Erinnerungen
+    meeting_lead_min: int    # so viele Minuten vor einem Termin erinnern
     work_start: str          # "08:00"
     work_end: str            # "17:30" (oder früher per „Feierabend“)
     signature: str
@@ -68,6 +70,8 @@ class Config:
             forward_bots=tuple(u.strip() for u in os.environ.get(
                 "VIOLET_FORWARD_BOTS", "U0B6N9LMZUM").split(",") if u.strip()),
             wrike_bot=os.environ.get("VIOLET_WRIKE_BOT", "U037VHMEV41").strip(),
+            outlook_bot=os.environ.get("VIOLET_OUTLOOK_BOT", "URJQ9JVRT").strip(),
+            meeting_lead_min=int(os.environ.get("VIOLET_MEETING_REMINDER", "5") or 5),
             work_start=_env("VIOLET_WORK_START", "08:00"),
             work_end=_env("VIOLET_WORK_END", "17:30"),
             monitor_channels=tuple(

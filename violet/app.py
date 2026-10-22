@@ -26,6 +26,7 @@ from . import focus as F
 from .avatar import Avatar, plain
 from . import lunch as L
 from . import monitor as M
+from . import outlook as O
 from . import reminders as R
 from . import status as S
 from . import worktime as W
@@ -47,6 +48,7 @@ HELP_TEXT = """*Was ich kann:*
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
 • `erinnere mich morgen um 9 an SPLA` / `… in 20 Minuten an …` – Erinnerung hier und über den Avatar · `erinnerungen` · `erinnerung löschen 2`
+• `termine` – deine Termine heute (aus Outlook); an jeden erinnere ich dich ein paar Minuten vorher
 • `unslop` + Text – entfernt typische KI-Formulierungen (Unslop-Regeln, gelten auch für meine #allgemein-Posts, Digest und Recap)
 • `essen` + kopierter Thread (oder `essen <Link zum Thread>`) – Mittagsbestellung: was wie oft, wer was
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
@@ -181,6 +183,8 @@ class Violet:
         if channel == self.dm:
             if event.get("user") == self.cfg.owner_user_id and not event.get("bot_id"):
                 self._guard(self.handle_command, event.get("text") or "")
+        elif event.get("channel_type") == "im" and self.cfg.outlook_bot and event.get("user") == self.cfg.outlook_bot:
+            self._guard(self.outlook_event, event)
         elif event.get("channel_type") == "im" and self.cfg.wrike_bot and event.get("user") == self.cfg.wrike_bot:
             self._guard(self.wrike_forward, event)
         elif event.get("channel_type") in ("im", "mpim"):
@@ -203,6 +207,8 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
+        if cmd in ("termine", "termine heute", "kalender"):
+            return self.show_meetings()
         if R.LIST.match(raw):
             return self.remind_list()
         if m := R.DELETE.match(raw):
@@ -367,7 +373,8 @@ class Violet:
             ]},
         ])
         if self.store.get("speak", True):
-            self.avatar.announce("Violet", f"Erinnerung: {item['text']}", "einer Erinnerung")
+            spoken = plain(item["text"], self.slack.name).replace("*", "")
+            self.avatar.announce("Violet", f"Erinnerung: {spoken}", "einer Erinnerung")
         log.info("Erinnerung gemeldet: %s", item["text"])
 
     def _on_remind(self, ack, body, minutes: int | None) -> None:
@@ -392,11 +399,94 @@ class Violet:
         # Nach Neustart/Standby werden verpasste Erinnerungen sofort nachgeholt.
         while True:
             try:
+                self.outlook_catch_up()
                 for item in self.reminders.pop_due(time.time()):
                     self.fire_reminder(item)
             except Exception as exc:  # noqa: BLE001 – Schleife darf nicht sterben
                 log.warning("Erinnerungen: %s", exc)
             time.sleep(20)
+
+    # --- Outlook-Termine ----------------------------------------------------------
+    def outlook_event(self, event: dict) -> None:
+        if O.is_agenda(event):
+            return self.outlook_agenda(event)
+        change = O.parse_change(event)
+        if change and change["kind"] == "cancelled":
+            key = change["title"].lower()
+            gone = self.reminders.remove_where(lambda r: (r.get("title") or "").lower() == key)
+            if gone:
+                self.say(f":x: Termin abgesagt: *{change['title']}* – Erinnerung entfernt.")
+
+    def outlook_agenda(self, event: dict) -> None:
+        """Tagesübersicht → je Termin eine Erinnerung ein paar Minuten vorher (keine Doppelten)."""
+        now = self.slack.now()
+        items = O.parse_agenda(event)
+        self.store.set("outlook_today", {"day": now.date().isoformat(), "items": items})
+        lead = self.cfg.meeting_lead_min * 60
+        added = 0
+        for it in items:
+            if it["all_day"] or not it["start"] or it["going"].lower() == "no" or it["start"] <= now.timestamp():
+                continue
+            when = datetime.fromtimestamp(it["start"], now.tzinfo)
+            text = f"*Termin um {when:%H:%M}:* {O.link(it)}" + (f" · {it['where']}" if it["where"] else "")
+            if self.reminders.add(max(it["start"] - lead, now.timestamp()), text,
+                                  key=f"outlook:{it['start']}:{it['title']}", title=it["title"]):
+                added += 1
+        if added:
+            self.say(f":calendar: {added} Termin{'e' if added > 1 else ''} heute – ich erinnere dich jeweils "
+                     f"{self.cfg.meeting_lead_min} Min vorher. `termine` zeigt alle.")
+
+    def outlook_catch_up(self) -> None:
+        """Tagesübersicht verpasst (Violet lief um 7:30 nicht)? Aus dem Outlook-Chat nachholen – höchstens alle 10 Min."""
+        if not self.cfg.outlook_bot:
+            return
+        now = self.slack.now()
+        state = self.store.get("outlook_today") or {}
+        if state.get("day") == now.date().isoformat() or now.timestamp() - (self.store.get("outlook_checked") or 0) < 600:
+            return
+        self.store.set("outlook_checked", now.timestamp())
+        channel = self.store.get("outlook_dm")
+        if not channel:
+            cursor = None
+            while not channel:
+                resp = self.user.users_conversations(types="im", limit=200, **({"cursor": cursor} if cursor else {}))
+                channel = next((c["id"] for c in resp["channels"] if c.get("user") == self.cfg.outlook_bot), None)
+                cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+                if not cursor:
+                    break
+            if not channel:
+                return
+            self.store.set("outlook_dm", channel)
+        msgs = self.user.conversations_history(channel=channel, oldest=str(self.slack.day_start()), limit=50)["messages"]
+        agenda = next((m for m in msgs if O.is_agenda(m)), None)
+        if agenda:
+            log.info("Outlook-Tagesübersicht nachgeholt")
+            self.outlook_agenda(agenda)
+
+    def show_meetings(self) -> None:
+        now = self.slack.now()
+        state = self.store.get("outlook_today") or {}
+        if state.get("day") != now.date().isoformat():
+            self.store.delete("outlook_checked")
+            self.outlook_catch_up()
+            state = self.store.get("outlook_today") or {}
+        if state.get("day") != now.date().isoformat():
+            self.say("Für heute habe ich noch keine Tagesübersicht von Outlook bekommen.")
+            return
+        lines = [":calendar: *Deine Termine heute:*"]
+        for it in state["items"]:
+            if it["all_day"]:
+                when = "ganztägig"
+            else:
+                s = datetime.fromtimestamp(it["start"], now.tzinfo)
+                e = datetime.fromtimestamp(it["end"], now.tzinfo) if it["end"] else None
+                when = f"{s:%H:%M}" + (f"–{e:%H:%M}" if e else "")
+            extra = (f" · {it['where']}" if it["where"] else "") + (" _(vielleicht)_" if it["going"] == "Maybe" else "")
+            extra += " _(abgesagt von dir)_" if it["going"].lower() == "no" else ""
+            lines.append(f"• {when} {O.link(it)}{extra}")
+        if len(lines) == 1:
+            lines.append("_Keine Termine._")
+        self.say("\n".join(lines))
 
     # --- Unslop -----------------------------------------------------------------
     def unslop(self, text: str) -> None:

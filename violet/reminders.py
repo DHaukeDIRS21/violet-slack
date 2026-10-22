@@ -34,11 +34,27 @@ class Reminders:
     def all(self) -> list[dict]:
         return sorted(self.store.get("reminders") or [], key=lambda r: r["due"])
 
-    def add(self, due: float, text: str) -> dict:
+    def add(self, due: float, text: str, key: str | None = None, title: str | None = None) -> dict | None:
+        """`key` (z. B. Outlook-Termin) verhindert Doppelte – dann None. `title` = Termintitel für Absagen."""
         item = {"id": uuid.uuid4().hex[:8], "due": due, "text": text, "created": time.time()}
+        if key:
+            item["key"] = key
+        if title:
+            item["title"] = title
         with self._lock:
-            self.store.set("reminders", self.all() + [item])
+            items = self.all()
+            if key and (key in (r.get("key") for r in items) or key in (self.store.get("reminder_keys_done") or [])):
+                return None
+            self.store.set("reminders", items + [item])
         return item
+
+    def remove_where(self, pred) -> list[dict]:
+        with self._lock:
+            items = self.all()
+            hit = [r for r in items if pred(r)]
+            if hit:
+                self.store.set("reminders", [r for r in items if r not in hit])
+        return hit
 
     def remove(self, reminder_id: str) -> dict | None:
         with self._lock:
@@ -54,4 +70,8 @@ class Reminders:
             due = [r for r in items if r["due"] <= now]
             if due:
                 self.store.set("reminders", [r for r in items if r["due"] > now])
+                # gemeldete Termin-Schlüssel merken, damit eine nachgeholte Übersicht sie nicht neu anlegt
+                keys = [r["key"] for r in due if r.get("key")]
+                if keys:
+                    self.store.set("reminder_keys_done", ((self.store.get("reminder_keys_done") or []) + keys)[-300:])
         return due
