@@ -3,12 +3,27 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 import anthropic
 
 from .focus import POST_SCHEMA
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def _load_unslop() -> str:
+    """Regeln aus dem Unslop-Skill (Kopie von ~/.claude/skills/unslop/SKILL.md), ohne Frontmatter."""
+    text = Path(__file__).with_name("unslop.md").read_text(encoding="utf-8")
+    return re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.DOTALL).strip()
+
+
+UNSLOP = _load_unslop()
+# Für Violets eigene Texte – ihre festen Formate gehen vor
+STYLE = ("\n\nSchreibstil: Wende auf deinen Text die folgenden Unslop-Regeln an. Die festen Formatvorgaben "
+         "oben (Emojis, :information_source:-Zeilen, Trennlinie, Grußformel, Slack-Links, Abschnittsüberschriften) "
+         "gehen vor und bleiben genau so.\n\n" + UNSLOP)
 
 
 class LLMError(RuntimeError):
@@ -130,7 +145,14 @@ Regeln: Punkte desselben Themas über die Tage zusammenführen; ein Punkt kann a
 stehen – maßgeblich ist der letzte Stand. Wiederkehrendes wie „Daily SysAdmin Requests“ nur einmal kurz.
 Nichts erfinden; Formulierungen der Punkte möglichst beibehalten. Abschnitte ohne Inhalt weglassen.
 """
-        return self._create(system, posts, effort="medium")
+        return self._create(system + STYLE, posts, effort="medium")
+
+    def unslop(self, text: str) -> str:
+        system = UNSLOP + """
+
+Gib nur den überarbeiteten Text aus, ohne Kommentar, ohne Einleitung. Slack-Formatierung bleibt
+unverändert: *fett*, _kursiv_, Links <url|Text>, :emoji:-Codes, Erwähnungen <@U…>, <!channel>, Aufzählungen."""
+        return self._create(system, text, effort="medium")
 
     # --- Mittagsbestellung -------------------------------------------------
     LUNCH_SCHEMA = {
@@ -210,7 +232,7 @@ Best regards,
 
 Gib nur den fertigen Post aus, ohne Kommentar.
 """
-        return self._create(system, f"Titel: {title}\n\nText:\n{body}", effort="medium")
+        return self._create(system + STYLE, f"Titel: {title}\n\nText:\n{body}", effort="medium")
 
     def edit_text(self, text: str, instruction: str) -> str:
         system = (
@@ -218,7 +240,7 @@ Gib nur den fertigen Post aus, ohne Kommentar.
             "Emojis und <!channel> bei, sofern die Anweisung nichts anderes sagt. "
             "Gib nur den fertigen Post aus."
         )
-        return self._create(system, f"Post:\n{text}\n\nAnweisung:\n{instruction}")
+        return self._create(system + STYLE, f"Post:\n{text}\n\nAnweisung:\n{instruction}")
 
     # --- DM-Digest --------------------------------------------------------
     DIGEST_SCHEMA = {
@@ -256,4 +278,4 @@ Kategorien:
 Persönliche/private Themen nur andeuten ("persönliches Thema – bitte direkt lesen").
 Keine Passwörter oder Zugangsdaten wiedergeben.
 """
-        return self._json(system, conversations, self.DIGEST_SCHEMA, effort="medium")
+        return self._json(system + STYLE, conversations, self.DIGEST_SCHEMA, effort="medium")

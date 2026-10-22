@@ -45,6 +45,7 @@ HELP_TEXT = """*Was ich kann:*
 • `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:, abgesagt/abgebrochen/hat sich erledigt :x:)
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
+• `unslop` + Text – entfernt typische KI-Formulierungen (Unslop-Regeln, gelten auch für meine #allgemein-Posts, Digest und Recap)
 • `essen` + kopierter Thread (oder `essen <Link zum Thread>`) – Mittagsbestellung: was wie oft, wer was
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an; außerhalb der Arbeitszeit nur VIPs)
@@ -85,6 +86,7 @@ FOCUS_PLUS = re.compile(
 )
 # „focus GPO Timeserver“ (einzeilig, ohne Doppelpunkt) = focus + … – „Focus: …“ bleibt eine Focus-Antwort
 FOCUS_BARE = re.compile(r"^\s*focus\s+(?P<topics>[^\s:][^\n]*?)\s*$", re.IGNORECASE)
+UNSLOP_CMD = re.compile(r"^\s*unslop\b\s*:?\s*(?P<text>.*)$", re.IGNORECASE | re.DOTALL)
 CHANNEL_MENTION = re.compile(r"^\s*(<!channel>|@channel)\s*", re.IGNORECASE)
 
 
@@ -197,6 +199,8 @@ class Violet:
             return self.start_focus()
         if m := L.COMMAND.match(raw):
             return self.lunch(m.group("rest"))
+        if m := UNSLOP_CMD.match(raw):
+            return self.unslop(m.group("text"))
         if m := FOCUS_PLUS.match(raw) or FOCUS_BARE.match(raw):
             return self.add_to_focus(F.split_topics(m.group("topics").strip().strip('"„“')))
         if cmd in ("arbeitszeit", "arbeitszeiten"):
@@ -293,6 +297,16 @@ class Violet:
             "target_ts": existing["ts"] if existing else None,
             "root_ts": existing["root_ts"] if existing else None,
         })
+
+    # --- Unslop -----------------------------------------------------------------
+    def unslop(self, text: str) -> None:
+        if not text.strip():
+            self.say("Schick mir den Text mit: `unslop` und darunter der Text. Ich entferne typische "
+                     "KI-Formulierungen und lasse Sprache, Anrede und Inhalt gleich.")
+            return
+        self.say(":broom: Räume den Text auf …")
+        out = self.llm.unslop(text)
+        self.say(out, [{"type": "section", "text": {"type": "mrkdwn", "text": p}} for p in chunk(out)])
 
     # --- Mittagsbestellung ------------------------------------------------------
     def lunch(self, rest: str) -> None:
