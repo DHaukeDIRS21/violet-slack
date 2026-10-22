@@ -26,6 +26,7 @@ from . import focus as F
 from .avatar import Avatar, plain
 from . import lunch as L
 from . import monitor as M
+from . import reminders as R
 from . import status as S
 from . import worktime as W
 from . import wrike as WR
@@ -45,6 +46,7 @@ HELP_TEXT = """*Was ich kann:*
 • `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:, abgesagt/abgebrochen/hat sich erledigt :x:)
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
+• `erinnere mich morgen um 9 an SPLA` / `… in 20 Minuten an …` – Erinnerung hier und über den Avatar · `erinnerungen` · `erinnerung löschen 2`
 • `unslop` + Text – entfernt typische KI-Formulierungen (Unslop-Regeln, gelten auch für meine #allgemein-Posts, Digest und Recap)
 • `essen` + kopierter Thread (oder `essen <Link zum Thread>`) – Mittagsbestellung: was wie oft, wer was
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
@@ -135,6 +137,7 @@ class Violet:
         self.llm = Claude(cfg.model)
         self.avatar = Avatar(cfg.backend_url, cfg.backend_token, cfg.backend_user)
         self.dedup = M.Dedup()
+        self.reminders = R.Reminders(self.store)
         self.todos = TodoList(self.user, self.store, cfg.todo_list or None)
         self.dm = self.bot.conversations_open(users=cfg.owner_user_id)["channel"]["id"]
         self._register()
@@ -152,6 +155,9 @@ class Violet:
         self.app.action("violet_edit")(self._on_edit)
         self.app.action("violet_cancel")(self._on_cancel)
         self.app.action("violet_forward")(self._on_forward)
+        self.app.action("violet_remind_10")(lambda ack, body: self._on_remind(ack, body, 10))
+        self.app.action("violet_remind_60")(lambda ack, body: self._on_remind(ack, body, 60))
+        self.app.action("violet_remind_done")(lambda ack, body: self._on_remind(ack, body, None))
         self.app.action("violet_todo_take")(lambda ack, body: self._on_todo(ack, body, take=True))
         self.app.action("violet_todo_defer")(lambda ack, body: self._on_todo(ack, body, take=False))
 
@@ -197,6 +203,12 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
+        if R.LIST.match(raw):
+            return self.remind_list()
+        if m := R.DELETE.match(raw):
+            return self.remind_delete(int(m.group("n") or m.group("n2")))
+        if R.ADD.match(raw):
+            return self.remind_add(raw)
         if m := L.COMMAND.match(raw):
             return self.lunch(m.group("rest"))
         if m := UNSLOP_CMD.match(raw):
@@ -297,6 +309,94 @@ class Violet:
             "target_ts": existing["ts"] if existing else None,
             "root_ts": existing["root_ts"] if existing else None,
         })
+
+    # --- Erinnerungen ------------------------------------------------------------
+    def remind_add(self, raw: str) -> None:
+        now = self.slack.now()
+        parsed = self.llm.parse_reminder(raw, f"{S_WEEKDAY[now.weekday()]}, {now:%d.%m.%Y %H:%M}")
+        if not parsed.get("ok") or not parsed.get("due"):
+            self.say(f":thinking_face: {parsed.get('question') or 'Wann soll ich dich woran erinnern?'}\n"
+                     "Z. B. `erinnere mich in 20 Minuten an den Rückruf` oder `erinnere mich morgen um 9 an SPLA`.")
+            return
+        try:
+            due = datetime.strptime(parsed["due"], "%Y-%m-%d %H:%M").replace(tzinfo=now.tzinfo).timestamp()
+        except ValueError:
+            self.say("Den Zeitpunkt habe ich nicht verstanden – sag ihn bitte nochmal anders.")
+            return
+        if due < now.timestamp() - 60:
+            self.say(f"{R.fmt(due, now.tzinfo)} liegt schon in der Vergangenheit – wann genau?")
+            return
+        item = self.reminders.add(due, parsed["text"].strip() or raw)
+        self.say(f":alarm_clock: Mach ich – {R.fmt(due, now.tzinfo)} erinnere ich dich an: *{item['text']}*")
+
+    def remind_list(self) -> None:
+        items = self.reminders.all()
+        if not items:
+            self.say("Keine offenen Erinnerungen. Neu: `erinnere mich morgen um 9 an …`")
+            return
+        tz = self.slack.now().tzinfo
+        lines = [":alarm_clock: *Deine Erinnerungen:*"]
+        lines += [f"{n}. {R.fmt(r['due'], tz)} – {r['text']}" for n, r in enumerate(items, 1)]
+        lines.append("_Löschen: `erinnerung löschen 2`_")
+        self.say("\n".join(lines))
+
+    def remind_delete(self, n: int) -> None:
+        items = self.reminders.all()
+        if not 1 <= n <= len(items):
+            self.say(f"Eine Erinnerung Nr. {n} gibt es nicht. `erinnerungen` zeigt alle.")
+            return
+        hit = self.reminders.remove(items[n - 1]["id"])
+        self.say(f":wastebasket: Erinnerung gelöscht: {hit['text']}")
+
+    def fire_reminder(self, item: dict) -> None:
+        now = self.slack.now()
+        late = now.timestamp() - item["due"] > 120
+        msg = f":alarm_clock: *Erinnerung:* {item['text']}"
+        if late:
+            msg += f"\n_(fällig war {R.fmt(item['due'], now.tzinfo)})_"
+        value = json.dumps({"t": item["text"][:1800]}, ensure_ascii=False)
+        self.say(msg, [
+            {"type": "section", "text": {"type": "mrkdwn", "text": msg}},
+            {"type": "actions", "block_id": "remind", "elements": [
+                {"type": "button", "action_id": "violet_remind_10", "value": value,
+                 "text": {"type": "plain_text", "text": "⏰ 10 Min später"}},
+                {"type": "button", "action_id": "violet_remind_60", "value": value,
+                 "text": {"type": "plain_text", "text": "⏰ 1 Std später"}},
+                {"type": "button", "action_id": "violet_remind_done", "value": value, "style": "primary",
+                 "text": {"type": "plain_text", "text": "✅ Erledigt"}},
+            ]},
+        ])
+        if self.store.get("speak", True):
+            self.avatar.announce("Violet", f"Erinnerung: {item['text']}", "einer Erinnerung")
+        log.info("Erinnerung gemeldet: %s", item["text"])
+
+    def _on_remind(self, ack, body, minutes: int | None) -> None:
+        ack()
+        item = json.loads(body["actions"][0]["value"])
+        message = body.get("message", {})
+
+        def run():
+            if minutes:
+                due = time.time() + minutes * 60
+                self.reminders.add(due, item["t"])
+                note = f":zzz: Erinnere dich nochmal {R.fmt(due, self.slack.now().tzinfo)}"
+            else:
+                note = ":white_check_mark: Erledigt"
+            blocks = [b for b in message.get("blocks", []) if b.get("type") != "actions"]
+            blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": note}]})
+            self.bot.chat_update(channel=self.dm, ts=message["ts"], text=message.get("text", ""), blocks=blocks)
+
+        self._guard(run)
+
+    def _reminder_loop(self) -> None:
+        # Nach Neustart/Standby werden verpasste Erinnerungen sofort nachgeholt.
+        while True:
+            try:
+                for item in self.reminders.pop_due(time.time()):
+                    self.fire_reminder(item)
+            except Exception as exc:  # noqa: BLE001 – Schleife darf nicht sterben
+                log.warning("Erinnerungen: %s", exc)
+            time.sleep(20)
 
     # --- Unslop -----------------------------------------------------------------
     def unslop(self, text: str) -> None:
@@ -908,6 +1008,7 @@ class Violet:
             self.say(":wave: Violet läuft wieder. Schreib `hilfe` für alle Befehle.")
         self.store.set("last_hello", today)
         threading.Thread(target=self._canvas_loop, name="focus-canvas", daemon=True).start()
+        threading.Thread(target=self._reminder_loop, name="reminders", daemon=True).start()
         SocketModeHandler(self.app, self.cfg.app_token).start()
 
 

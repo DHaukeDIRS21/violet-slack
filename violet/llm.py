@@ -154,6 +154,32 @@ Gib nur den überarbeiteten Text aus, ohne Kommentar, ohne Einleitung. Slack-For
 unverändert: *fett*, _kursiv_, Links <url|Text>, :emoji:-Codes, Erwähnungen <@U…>, <!channel>, Aufzählungen."""
         return self._create(system, text, effort="medium")
 
+    # --- Erinnerungen -----------------------------------------------------
+    REMINDER_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "ok": {"type": "boolean", "description": "false, wenn Zeitpunkt oder Inhalt unklar ist"},
+            "due": {"type": "string", "description": "Zeitpunkt als YYYY-MM-DD HH:MM (lokale Zeit), sonst leer"},
+            "text": {"type": "string", "description": "Woran erinnert werden soll, kurz, ohne Zeitangabe"},
+            "question": {"type": "string", "description": "Rückfrage, wenn ok=false, sonst leer"},
+        },
+        "required": ["ok", "due", "text", "question"],
+        "additionalProperties": False,
+    }
+
+    def parse_reminder(self, message: str, now: str) -> dict:
+        system = f"""\
+Daniel bittet seine Assistentin, ihn an etwas zu erinnern. Jetzt ist {now} (Europe/Berlin).
+Bestimme den Zeitpunkt und den Inhalt.
+- "in 20 Minuten", "in 2 Stunden", "in einer halben Stunde" → relativ zu jetzt.
+- "um 15 Uhr"/"15:30" ohne Datum → heute; ist die Zeit heute schon vorbei → morgen.
+- "morgen", "übermorgen", "Freitag", "nächste Woche Montag", "am 3.11." ohne Uhrzeit → 09:00.
+- "heute Nachmittag" → 14:00, "heute Abend" → 18:00, "mittags" → 12:00, "früh"/"morgens" → 08:00.
+- Wochentag ohne "nächste" = der nächste kommende (heute nur, wenn die Uhrzeit noch nicht vorbei ist).
+- text: nur der Inhalt („Rückruf bei Volker“), Sprache und Wortlaut von Daniel, ohne „erinnere mich an“.
+- Fehlt der Inhalt oder ist der Zeitpunkt nicht bestimmbar, ok=false und eine kurze Rückfrage."""
+        return self._json(system, message, self.REMINDER_SCHEMA)
+
     # --- Mittagsbestellung -------------------------------------------------
     LUNCH_SCHEMA = {
         "type": "object",
