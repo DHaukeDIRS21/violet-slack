@@ -157,6 +157,7 @@ class Violet:
         self.app.action("violet_edit")(self._on_edit)
         self.app.action("violet_cancel")(self._on_cancel)
         self.app.action("violet_forward")(self._on_forward)
+        self.app.action("violet_teams_join")(lambda ack: ack())  # Link-Button: nur bestätigen
         self.app.action("violet_remind_10")(lambda ack, body: self._on_remind(ack, body, 10))
         self.app.action("violet_remind_60")(lambda ack, body: self._on_remind(ack, body, 60))
         self.app.action("violet_remind_done")(lambda ack, body: self._on_remind(ack, body, None))
@@ -408,14 +409,42 @@ class Violet:
 
     # --- Outlook-Termine ----------------------------------------------------------
     def outlook_event(self, event: dict) -> None:
+        """Outlook-Meldungen aufbereitet in den Violet-Chat kopieren (mit Teams-Link)."""
+        if links := O.teams_links(event):  # Teams-Link je Termin merken → kommt in die Erinnerung
+            self.store.set("teams_links", dict(list({**(self.store.get("teams_links") or {}), **links}.items())[-300:]))
         if O.is_agenda(event):
-            return self.outlook_agenda(event)
+            self.outlook_agenda(event)
+            return self.show_meetings(intro=":calendar: *Deine Termine heute* (aus Outlook):")
+        if up := O.parse_upcoming(event):
+            return self.outlook_upcoming(up)
         change = O.parse_change(event)
-        if change and change["kind"] == "cancelled":
+        if not change:
+            return
+        note = O.change_note(event) or "geändert"
+        if change["kind"] == "cancelled":
             key = change["title"].lower()
             gone = self.reminders.remove_where(lambda r: (r.get("title") or "").lower() == key)
-            if gone:
-                self.say(f":x: Termin abgesagt: *{change['title']}* – Erinnerung entfernt.")
+            self.say(f":x: Termin {note}: *{change['title']}*" + (" – Erinnerung entfernt." if gone else ""))
+        else:
+            join = O.join_url(event)
+            self.say(f":white_circle: Termin {note}: *{change['title']}*"
+                     + (f" · <{join}|Teams beitreten>" if join else ""))
+
+    def outlook_upcoming(self, up: dict) -> None:
+        tz = self.slack.now().tzinfo
+        when = ""
+        if up["start"]:
+            when = datetime.fromtimestamp(up["start"], tz).strftime("%H:%M")
+            if up["end"]:
+                when += "–" + datetime.fromtimestamp(up["end"], tz).strftime("%H:%M")
+        msg = f":loudspeaker: *In {up['lead']}:* {O.link(up)}" + (f" · {when}" if when else "") + \
+              (f" · {up['where']}" if up["where"] else "")
+        blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": msg}}]
+        if up["join"]:
+            blocks.append({"type": "actions", "elements": [{
+                "type": "button", "url": up["join"], "style": "primary", "action_id": "violet_teams_join",
+                "text": {"type": "plain_text", "text": "🎥 Teams beitreten"}}]})
+        self.say(msg, blocks)
 
     def outlook_agenda(self, event: dict) -> None:
         """Tagesübersicht → je Termin eine Erinnerung ein paar Minuten vorher (keine Doppelten)."""
@@ -429,14 +458,14 @@ class Violet:
                 continue
             when = datetime.fromtimestamp(it["start"], now.tzinfo)
             text = f"*Termin um {when:%H:%M}:* {O.link(it)}" + (f" · {it['where']}" if it["where"] else "")
+            if join := (self.store.get("teams_links") or {}).get(O.item_id(it["url"])):
+                text += f" · <{join}|Teams beitreten>"
             if self.reminders.add(max(it["start"] - lead, now.timestamp()), text,
                                   key=f"outlook:{it['start']}:{it['title']}", title=it["title"]):
                 added += 1
-        if added:
-            self.say(f":calendar: {added} Termin{'e' if added > 1 else ''} heute – ich erinnere dich jeweils "
-                     f"{self.cfg.meeting_lead_min} Min vorher. `termine` zeigt alle.")
+        self._agenda_added = added  # für den Hinweis unter der Terminliste
 
-    def outlook_catch_up(self) -> None:
+    def outlook_catch_up(self, announce: bool = True) -> None:
         """Tagesübersicht verpasst (Violet lief um 7:30 nicht)? Aus dem Outlook-Chat nachholen – höchstens alle 10 Min."""
         if not self.cfg.outlook_bot:
             return
@@ -462,18 +491,21 @@ class Violet:
         if agenda:
             log.info("Outlook-Tagesübersicht nachgeholt")
             self.outlook_agenda(agenda)
+            if announce:
+                self.show_meetings(intro=":calendar: *Deine Termine heute* (aus Outlook, nachgeholt):")
 
-    def show_meetings(self) -> None:
+    def show_meetings(self, intro: str = ":calendar: *Deine Termine heute:*") -> None:
         now = self.slack.now()
         state = self.store.get("outlook_today") or {}
         if state.get("day") != now.date().isoformat():
             self.store.delete("outlook_checked")
-            self.outlook_catch_up()
+            self.outlook_catch_up(announce=False)
             state = self.store.get("outlook_today") or {}
         if state.get("day") != now.date().isoformat():
             self.say("Für heute habe ich noch keine Tagesübersicht von Outlook bekommen.")
             return
-        lines = [":calendar: *Deine Termine heute:*"]
+        lines = [intro]
+        links = self.store.get("teams_links") or {}
         for it in state["items"]:
             if it["all_day"]:
                 when = "ganztägig"
@@ -483,9 +515,14 @@ class Violet:
                 when = f"{s:%H:%M}" + (f"–{e:%H:%M}" if e else "")
             extra = (f" · {it['where']}" if it["where"] else "") + (" _(vielleicht)_" if it["going"] == "Maybe" else "")
             extra += " _(abgesagt von dir)_" if it["going"].lower() == "no" else ""
+            if join := links.get(O.item_id(it["url"])):
+                extra += f" · <{join}|Teams beitreten>"
             lines.append(f"• {when} {O.link(it)}{extra}")
         if len(lines) == 1:
             lines.append("_Keine Termine._")
+        elif getattr(self, "_agenda_added", 0):
+            lines.append(f"_Ich erinnere dich jeweils {self.cfg.meeting_lead_min} Min vorher._")
+            self._agenda_added = 0
         self.say("\n".join(lines))
 
     # --- Unslop -----------------------------------------------------------------

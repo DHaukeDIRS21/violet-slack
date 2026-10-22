@@ -66,7 +66,10 @@ def test_agenda_creates_reminders_once(violet):
     items = violet.reminders.all()
     assert [(r["due"], r["title"]) for r in items] == [(T(8, 55), "Daily Standup"), (T(13, 25), "Improver Review")]
     assert items[0]["text"] == "*Termin um 09:00:* <https://outlook/Daily Standup|Daily Standup> · Microsoft Teams Meeting; Raum Wernau"
-    assert "2 Termine heute" in violet.say.call_args_list[0].args[0] and violet.say.call_count == 1
+    listing = violet.say.call_args_list[0].args[0]
+    assert listing.startswith(":calendar: *Deine Termine heute* (aus Outlook):")
+    assert "Ich erinnere dich jeweils 5 Min vorher" in listing
+    assert "Ich erinnere" not in violet.say.call_args_list[1].args[0]     # beim 2. Mal nichts Neues
 
 
 def test_fired_meeting_not_recreated_by_catch_up(violet):
@@ -102,6 +105,47 @@ def test_termine_command(violet):
     out = violet.say.call_args.args[0]
     assert "• 09:00–09:30 <https://outlook/Daily Standup|Daily Standup>" in out
     assert "_(vielleicht)_" in out and "ganztägig" in out and "_(abgesagt von dir)_" in out
+
+
+JOIN = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0"
+ITEM = "https://outlook.office365.com/owa/?itemid=ABC123&amp;exvsurl=1&amp;path=/calendar/item"
+UPCOMING = {"user": "UOUTLOOK", "channel_type": "im", "channel": "DOUT", "ts": "3.0", "text": "", "attachments": [
+    {"pretext": ":loudspeaker: _1 minute until this event:_", "author_name": "Every week on Thursday",
+     "title": f"<!date^{T(11, 30)}^{{time}}|11:30 AM> - <!date^{T(12)}^{{time}}|12:00 PM> <{ITEM}|VS/DHa Weekly>",
+     "text": f"*Where:* Microsoft Teams-Besprechung; Kaminzimmer\n*Guests:* You\n*What:* <{JOIN}|Jetzt teilnehmen>"},
+    {"actions": [{"type": "button", "text": "Join Microsoft Teams Meeting", "url": JOIN}]}]}
+
+
+def test_parse_upcoming():
+    up = O.parse_upcoming(UPCOMING)
+    assert (up["lead"], up["start"], up["end"], up["title"], up["join"]) == ("1 Min", T(11, 30), T(12), "VS/DHa Weekly", JOIN)
+    assert up["where"] == "Microsoft Teams-Besprechung; Kaminzimmer"
+    assert O.teams_links(UPCOMING) == {"ABC123": JOIN}
+
+
+def test_upcoming_copied_with_join_button(violet):
+    violet._on_message(UPCOMING)
+    msg, blocks = violet.say.call_args.args
+    assert msg.startswith(":loudspeaker: *In 1 Min:* <") and "11:30–12:00" in msg and "Kaminzimmer" in msg
+    btn = blocks[1]["elements"][0]
+    assert btn["url"] == JOIN and btn["text"]["text"] == "🎥 Teams beitreten"
+    violet.avatar.announce.assert_not_called()        # nicht doppelt vorlesen
+
+
+def test_known_teams_link_goes_into_agenda_reminder(violet):
+    violet._on_message(UPCOMING)                       # Link für itemid ABC123 gelernt
+    agenda = {**AGENDA, "attachments": [{"text": f"<!date^{T(15)}^{{time}}|x>-<!date^{T(16)}^{{time}}|x> "
+                                                 f"*<{ITEM}|VS/DHa Weekly>*\nTeams\n*Going?* Yes"}]}
+    violet._on_message(agenda)
+    assert violet.reminders.all()[0]["text"].endswith(f"· <{JOIN}|Teams beitreten>")
+    assert f"<{JOIN}|Teams beitreten>" in violet.say.call_args.args[0]       # auch in der Terminliste
+
+
+def test_change_copied(violet):
+    violet._on_message({"user": "UOUTLOOK", "channel_type": "im", "channel": "DOUT", "ts": "4.0", "attachments": [
+        {"pretext": ":white_circle: _Event updated! Location changed:_", "title": "Daily (d@dirs21.de)",
+         "text": f"*Where:* Teams <{JOIN}|Join>"}]})
+    assert violet.say.call_args.args[0] == f":white_circle: Termin Ort geändert: *Daily* · <{JOIN}|Teams beitreten>"
 
 
 def test_meeting_reminder_spoken_without_markup(violet):
