@@ -20,6 +20,29 @@ def thread_ref(text: str) -> tuple[str, str] | None:
     return m.group("channel"), m.group("thread") or f"{m.group('sec')}.{m.group('frac')}"
 
 
+PLUS_ONE = re.compile(r"^\+\d+(?![\dx×])")
+
+
+def split_extras(text: str) -> tuple[str, list[str]]:
+    """Zeilen, die mit „+“ beginnen, sind Zusatzbestellungen (nicht im Thread) – Rest bleibt Thread/Link."""
+    rest, extras = [], []
+    for line in (text or "").splitlines():
+        # „+1“/„+1 zu Tom“ aus einem kopierten Thread ist eine Thread-Nachricht, kein Zusatz
+        if line.lstrip().startswith("+") and not PLUS_ONE.match(line.lstrip()):
+            if entry := line.lstrip()[1:].strip():
+                extras.append(entry)
+        else:
+            rest.append(line)
+    return "\n".join(rest).strip(), extras
+
+
+def with_extras(thread: str, extras: list[str]) -> str:
+    if not extras:
+        return thread
+    return (thread + "\n\nZUSÄTZLICHE BESTELLUNGEN (nicht im Thread, zählen voll mit; je Zeile Person und "
+            "Gericht in beliebiger Reihenfolge, ggf. mit Anzahl):\n" + "\n".join(f"- {e}" for e in extras))
+
+
 def render(result: dict) -> str:
     dishes = [d for d in result.get("dishes") or [] if d.get("orders")]
     for d in dishes:

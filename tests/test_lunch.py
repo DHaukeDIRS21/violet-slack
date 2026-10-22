@@ -40,6 +40,25 @@ def test_thread_ref(text, ref):
     assert L.thread_ref(text) == ref
 
 
+def test_split_extras():
+    text = ("https://dirs21.slack.com/archives/C0DEV/p1792565269691899\n"
+            "+ Daniel Pizza Salami\n+Lisa Bowl of the Month\n+ 2x Cola für Tom\n+2x Wasser für Jana\n+")
+    rest, extras = L.split_extras(text)
+    assert rest == "https://dirs21.slack.com/archives/C0DEV/p1792565269691899"
+    assert extras == ["Daniel Pizza Salami", "Lisa Bowl of the Month", "2x Cola für Tom", "2x Wasser für Jana"]
+
+
+def test_plus_one_in_pasted_thread_stays_in_thread():
+    rest, extras = L.split_extras("Kevin Roth  10:50 Uhr\n+1 zu Tom\n+1\n+ Daniel Salami")
+    assert "+1 zu Tom" in rest and rest.endswith("+1") and extras == ["Daniel Salami"]
+
+
+def test_with_extras():
+    assert L.with_extras("thread", []) == "thread"
+    out = L.with_extras("thread", ["Daniel Salami"])
+    assert out.startswith("thread\n\nZUSÄTZLICHE BESTELLUNGEN") and out.endswith("- Daniel Salami")
+
+
 @pytest.fixture
 def violet(tmp_path):
     v = Violet.__new__(Violet)
@@ -66,6 +85,21 @@ def test_command_with_link_reads_thread(violet):
     violet.handle_command("essen https://dirs21.slack.com/archives/C0DEV/p1792565269691899")
     violet.user.conversations_replies.assert_called_once_with(channel="C0DEV", ts="1792565269.691899", limit=200)
     assert violet.llm.lunch_orders.call_args.args[0] == "Lisa: Wer bestellt mit?\nAnna: Margherita"
+
+
+def test_link_with_extras(violet):
+    violet.user.conversations_replies.return_value = {
+        "messages": [{"user": "Anna", "text": "Margherita"}], "response_metadata": {"next_cursor": ""}}
+    violet.handle_command("essen https://dirs21.slack.com/archives/C0DEV/p1792565269691899\n+ Daniel Salami")
+    sent = violet.llm.lunch_orders.call_args.args[0]
+    assert sent.startswith("Anna: Margherita\n\nZUSÄTZLICHE") and sent.endswith("- Daniel Salami")
+    assert "plus 1 Zusatzbestellung" in violet.say.call_args_list[0].args[0]
+
+
+def test_only_extras(violet):
+    violet.handle_command("essen\n+ Daniel Salami\n+ Lisa Bowl of the Month")
+    assert "ZUSÄTZLICHE" in violet.llm.lunch_orders.call_args.args[0]
+    violet.user.conversations_replies.assert_not_called()
 
 
 def test_bare_word_is_not_lunch(violet):

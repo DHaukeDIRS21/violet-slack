@@ -310,6 +310,7 @@ class Violet:
 
     # --- Mittagsbestellung ------------------------------------------------------
     def lunch(self, rest: str) -> None:
+        rest, extras = L.split_extras(rest)
         if ref := L.thread_ref(rest):
             channel, thread_ts = ref
             msgs, cursor = [], None
@@ -322,10 +323,14 @@ class Violet:
                     break
             thread = "\n".join(f"{self.slack.author(m)}: {m.get('text') or ''}" for m in msgs)
             source = f"{len(msgs)} Nachrichten aus dem Thread"
-        else:
+        elif rest:
             thread, source = rest, "deinem kopierten Thread"
+        else:
+            thread, source = "", "deiner Liste"
+        if extras:
+            source += f" plus {len(extras)} Zusatzbestellung{'en' if len(extras) > 1 else ''}"
         self.say(f":hourglass_flowing_sand: Zähle die Bestellungen aus {source} …")
-        out = L.render(self.llm.lunch_orders(thread))
+        out = L.render(self.llm.lunch_orders(L.with_extras(thread, extras)))
         self.say(out, [{"type": "section", "text": {"type": "mrkdwn", "text": p}} for p in chunk(out)])
 
     # --- Slack-Status ------------------------------------------------------------
