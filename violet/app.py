@@ -24,6 +24,7 @@ from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
 
 from . import focus as F
 from .avatar import Avatar, plain
+from . import lunch as L
 from . import monitor as M
 from . import status as S
 from . import worktime as W
@@ -44,6 +45,7 @@ HELP_TEXT = """*Was ich kann:*
 • `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:, abgesagt/abgebrochen/hat sich erledigt :x:)
 • `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
 • `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
+• `essen` + kopierter Thread (oder `essen <Link zum Thread>`) – Mittagsbestellung: was wie oft, wer was
 • `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
 • `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an; außerhalb der Arbeitszeit nur VIPs)
 • `arbeitszeit` – Mo–Fr 8:00 bis 17:30 oder „Feierabend“; danach nur VIPs und Monitoring-Alerts
@@ -193,6 +195,8 @@ class Violet:
             return
         if cmd == "focus":
             return self.start_focus()
+        if m := L.COMMAND.match(raw):
+            return self.lunch(m.group("rest"))
         if m := FOCUS_PLUS.match(raw) or FOCUS_BARE.match(raw):
             return self.add_to_focus(F.split_topics(m.group("topics").strip().strip('"„“')))
         if cmd in ("arbeitszeit", "arbeitszeiten"):
@@ -289,6 +293,26 @@ class Violet:
             "target_ts": existing["ts"] if existing else None,
             "root_ts": existing["root_ts"] if existing else None,
         })
+
+    # --- Mittagsbestellung ------------------------------------------------------
+    def lunch(self, rest: str) -> None:
+        if ref := L.thread_ref(rest):
+            channel, thread_ts = ref
+            msgs, cursor = [], None
+            while True:
+                resp = self.user.conversations_replies(channel=channel, ts=thread_ts, limit=200,
+                                                       **({"cursor": cursor} if cursor else {}))
+                msgs += resp["messages"]
+                cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+                if not cursor:
+                    break
+            thread = "\n".join(f"{self.slack.author(m)}: {m.get('text') or ''}" for m in msgs)
+            source = f"{len(msgs)} Nachrichten aus dem Thread"
+        else:
+            thread, source = rest, "deinem kopierten Thread"
+        self.say(f":hourglass_flowing_sand: Zähle die Bestellungen aus {source} …")
+        out = L.render(self.llm.lunch_orders(thread))
+        self.say(out, [{"type": "section", "text": {"type": "mrkdwn", "text": p}} for p in chunk(out)])
 
     # --- Slack-Status ------------------------------------------------------------
     def set_status(self, preset: dict) -> None:

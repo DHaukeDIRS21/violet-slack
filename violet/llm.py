@@ -132,6 +132,58 @@ Nichts erfinden; Formulierungen der Punkte möglichst beibehalten. Abschnitte oh
 """
         return self._create(system, posts, effort="medium")
 
+    # --- Mittagsbestellung -------------------------------------------------
+    LUNCH_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "dishes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "dish": {"type": "string", "description": "Gericht, einheitlich benannt"},
+                        "orders": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "person": {"type": "string"},
+                                    "count": {"type": "integer"},
+                                    "note": {"type": "string", "description": "Sonderwunsch, sonst leer"},
+                                },
+                                "required": ["person", "count", "note"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["dish", "orders"],
+                    "additionalProperties": False,
+                },
+            },
+            "unclear": {"type": "array", "items": {"type": "string"},
+                        "description": "Nachrichten, die keiner Bestellung sicher zuzuordnen sind (mit Name)"},
+        },
+        "required": ["dishes", "unclear"],
+        "additionalProperties": False,
+    }
+
+    def lunch_orders(self, thread: str) -> dict:
+        system = """\
+Du wertest einen Slack-Thread aus, in dem Kollegen ihr Mittagessen bestellen.
+Gib jedes bestellte Gericht mit allen Bestellungen (Person, Anzahl, Sonderwunsch) zurück.
+Regeln:
+- Gleiche Gerichte zusammenfassen, auch bei unterschiedlicher Schreibweise ("Margherita", "Pizza Margh.").
+  Unterschiedliche Größen/Varianten bleiben getrennt. Nimm den Namen, wie er auf einer Karte stehen würde.
+- "Ich auch", "+1", "dasselbe wie X", ein Daumen-Hoch-Text o. Ä. → gleiche Bestellung wie der Bezug.
+- Spätere Änderungen/Abbestellungen derselben Person ersetzen die frühere Bestellung.
+- Wer mehrere Gerichte bestellt, taucht bei jedem Gericht auf. "2x"/"zwei" → count 2.
+- Sonderwünsche (ohne Zwiebeln, extra scharf, Getränk dazu …) in note; Getränke/Beilagen, die extra
+  bestellt werden, als eigenes Gericht.
+- Die Startnachricht (Wer bestellt mit? Karte …) und reine Organisation (Zahlung, Abholung) sind keine Bestellung.
+- Nichts erfinden. Was du nicht sicher zuordnen kannst, kommt mit Name in unclear.
+- Personennamen so, wie sie im Thread stehen (Vor- und Nachname, wenn vorhanden)."""
+        return self._json(system, thread, self.LUNCH_SCHEMA, effort="medium")
+
     # --- #allgemein -------------------------------------------------------
     def bilingual_announcement(self, title: str, body: str, signature: str) -> str:
         system = f"""\
