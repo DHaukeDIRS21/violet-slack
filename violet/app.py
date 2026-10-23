@@ -39,26 +39,41 @@ from .todos import TodoList
 
 log = logging.getLogger("violet")
 
-HELP_TEXT = """*Was ich kann:*
-• `focus` – Focus of the day für #improver-squad, mit Vorschlägen aus deiner To-do-Liste (dein heutiger Focus steht immer im Canvas oben in diesem Chat – rechts als Seitenleiste öffnen)
-• `@channel :information_source: Titel` + Text – zweisprachiger Post in #allgemein
-• `allgemein: Text` – Post in #allgemein, unverändert
-• `focus + VPN für Praktikant, Drucker 2. OG` (oder `ergänze …`) – vergessene Themen unter Focus :dart: ergänzen
-• `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – aktualisiert deinen heutigen Focus-Post (erledigt :white_check_mark:, arbeite an :construction:, warte :hourglass_flowing_sand:, abgesagt/abgebrochen/hat sich erledigt :x:)
-• `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ergänzt ungeplante Themen unter Other Topics in deinem heutigen Post (ohne Status: :construction:)
-• `recap` oder `recap 4` – Zusammenfassung deiner Focus-Posts der letzten 3 (bzw. 4) Wochen
-• `erinnere mich morgen um 9 an SPLA` / `… in 20 Minuten an …` – Erinnerung hier und über den Avatar · `erinnerungen` · `erinnerung löschen 2`
-• `termine` – deine Termine heute (aus Outlook); an jeden erinnere ich dich ein paar Minuten vorher
-• `unslop` + Text – entfernt typische KI-Formulierungen (Unslop-Regeln, gelten auch für meine #allgemein-Posts, Digest und Recap)
-• `essen` + kopierter Thread (oder `essen <Link zum Thread>`) – Mittagsbestellung: was wie oft, wer was
-• `digest` oder `digest 48` – DM-Zusammenfassung (seit letztem Digest bzw. letzte 48 h)
-• `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an; außerhalb der Arbeitszeit nur VIPs)
-• `arbeitszeit` – Mo–Fr 8:00 bis 17:30 oder „Feierabend“; danach nur VIPs und Monitoring-Alerts
-• `vorlesen an` / `vorlesen aus` – Violet-Avatar liest neue DMs vor (Standard: an)
-• `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau sofort hier melden (Standard: an)
-• Slack-Status: `ich geh laufen` · `ich muss ins RZ` · `Feierabend` (freitags „bis Montag“) · `bin unterwegs` · `ich fahre ins Büro` · `lasst mich in Ruhe` · `status weg`
-  eigene: `status neu :fork_and_knife: Mittagspause = mittag, essen` · `status liste` · `status entfernen Mittagspause`
-• `abbrechen` – laufenden Vorgang beenden
+HELP_TEXT = """*Was ich kann*
+
+:dart: *Focus of the day* (#improver-squad)
+• `focus` – Focus für heute, mit Vorschlägen aus deiner To-do-Liste. Der aktuelle Stand steht im Canvas oben in diesem Chat (rechts als Seitenleiste öffnen).
+• `focus + VPN für Praktikant, Drucker 2. OG` (oder `ergänze …`) – vergessene Themen unter Focus ergänzen
+• `status Mailtastic erledigt, arbeite an Prakti Laptop, warte VMWare` – Status im heutigen Post: erledigt :white_check_mark: · arbeite an :construction: · warte :hourglass_flowing_sand: · abgesagt/abgebrochen/hat sich erledigt :x:
+• `unplanned Drucker 2. OG, Teams-Ausfall Vertrieb erledigt` – ungeplante Themen unter Other Topics (ohne Status :construction:)
+• `recap` oder `recap 4` – Rückblick über deine Focus-Posts der letzten 3 (bzw. 4) Wochen
+
+:mega: *Posts in #allgemein*
+• `@channel :information_source: Titel` + Text – zweisprachiger Post (DE/EN)
+• `allgemein: Text` – Post unverändert
+
+:alarm_clock: *Erinnerungen & Termine*
+• `erinnere mich morgen um 9 an SPLA` / `… in 20 Minuten an …` – Erinnerung hier und über den Avatar
+• `erinnerungen` – offene anzeigen · `erinnerung löschen 2`
+• `termine` – deine Termine heute (Outlook). An jeden erinnere ich dich ein paar Minuten vorher, mit Teams-Link.
+
+:incoming_envelope: *Nachrichten & Benachrichtigungen*
+• `digest` oder `digest 48` – DM-Zusammenfassung (seit dem letzten Digest bzw. letzte 48 h)
+• `live an` / `live aus` – neue DMs sofort hier anzeigen (Standard: an)
+• `vorlesen an` / `vorlesen aus` – der Avatar liest neue DMs vor (Standard: an)
+• `arbeitszeit` – Mo–Fr 8:00 bis 17:30 oder bis „Feierabend“. Danach melde ich nur VIPs, Monitoring-Alerts und Erinnerungen.
+• `eskalation an` / `eskalation aus` – kritische Meldungen aus #monitoring-torz / #monitoring-wernau (Standard: an)
+• Automatisch: Wrike (neues Ticket, Erwähnung) und Outlook (Termin-Hinweise, Änderungen, Absagen)
+
+:bust_in_silhouette: *Slack-Status*
+• `ich geh laufen` · `ich muss ins RZ` · `Feierabend` (freitags „bis Montag“) · `bin unterwegs` · `ich fahre ins Büro` · `lasst mich in Ruhe` · `status weg`
+• Eigene: `status neu :fork_and_knife: Mittagspause = mittag, essen` · `status liste` · `status entfernen Mittagspause`
+
+:toolbox: *Werkzeuge*
+• `essen` + kopierter Thread oder `essen <Link zum Thread>` – Mittagsbestellung: was wie oft, wer was. Mit `+ Daniel Salami` kommen weitere Bestellungen dazu.
+• `unslop` + Text – entfernt typische KI-Formulierungen (gilt auch für meine #allgemein-Posts, Digest und Recap)
+
+`hilfe` – diese Übersicht · `abbrechen` – laufenden Vorgang beenden
 Ich poste nie ohne deinen Klick auf :white_check_mark: Posten."""
 
 FOCUS_QUESTIONS = """*Für heute – antworte in einer Nachricht:*
