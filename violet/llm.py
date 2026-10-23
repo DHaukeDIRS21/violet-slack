@@ -104,7 +104,8 @@ Aufgabe: Erstelle den Post für HEUTE aus dem letzten Post und Daniels Antwort.
 - recap = die focus-Punkte des letzten Posts, mit den Status, die Daniel nennt.
   Ohne Angabe bleibt der Status, wie er war. Ungeplante Themen vom letzten Post nicht in recap.
 - focus = Daniels neue Ziele für heute, danach alle recap-Punkte, die nicht done oder cancelled sind
-  (mit ihrem Status). Wiederkehrendes wie "Daily SysAdmin Requests" bleibt mit wip drin.
+  (mit ihrem Status). "Daily SysAdmin Requests" steht im recap immer als done und im focus immer
+  als wip, jeweils als letzter Punkt.
   Neue Ziele haben Status open.
 - other = nur ungeplante Themen, die Daniel heute nennt.
 - info: übernimm aus der Antwort; ohne Angabe aus dem letzten Post.

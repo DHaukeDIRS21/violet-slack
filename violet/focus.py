@@ -155,6 +155,19 @@ def render_markdown(post: dict | None, day, link: str | None = None) -> str:
     return "\n".join(lines).rstrip()
 
 
+DAILY = "Daily SysAdmin Requests"
+
+
+def ensure_daily(post: dict) -> dict:
+    """Neuer Tagespost: „Daily SysAdmin Requests“ steht im Recap immer erledigt, im Focus immer in Arbeit –
+    jeweils als letzter Punkt (vorhandene Schreibweisen werden ersetzt)."""
+    def without(items):
+        return [i for i in items if "daily sysadmin" not in i.get("text", "").lower()]
+    return {**post,
+            "recap": without(post.get("recap", [])) + [{"text": DAILY, "status": "done"}],
+            "focus": without(post.get("focus", [])) + [{"text": DAILY, "status": "wip"}]}
+
+
 def split_topics(text: str) -> list[str]:
     """„VPN Praktikant, Drucker 2. OG“ → ['VPN Praktikant', 'Drucker 2. OG']"""
     return [t.strip(" •-*\t") for t in re.split(r"[,;\n]", text or "") if t.strip(" •-*\t")]

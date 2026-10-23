@@ -19,6 +19,30 @@ Other Topics :zustimmen: (unplanned):
 :information_source::"""
 
 
+def test_ensure_daily():
+    post = F.parse_post(POST)                      # Daily steht im Focus mit :construction:, im Recap fehlt es
+    post["focus"].insert(0, {"text": "daily sysadmin requests", "status": "done"})
+    out = F.ensure_daily(post)
+    assert out["recap"][-1] == {"text": "Daily SysAdmin Requests", "status": "done"}
+    assert out["focus"][-1] == {"text": "Daily SysAdmin Requests", "status": "wip"}
+    assert sum("daily sysadmin" in i["text"].lower() for i in out["focus"] + out["recap"]) == 2
+    rendered = F.render_post(out)
+    assert "• Daily SysAdmin Requests :white_check_mark:\nFocus :dart::" in rendered
+    assert "• Daily SysAdmin Requests :construction:\nOther Topics" in rendered
+
+
+def test_new_post_gets_daily(violet):
+    violet.slack.today_post.return_value = None
+    violet.llm = MagicMock()
+    violet.llm.new_focus_post.return_value = {"info": "HO", "recap": [{"text": "Laptop", "status": "done"}],
+                                              "focus": [{"text": "VPN", "status": "open"}], "other": [],
+                                              "sos": "", "information": ""}
+    violet.answer_focus("Focus: VPN", None)
+    post = violet.preview.call_args.args[0]["post"]
+    assert [i["text"] for i in post["recap"]] == ["Laptop", "Daily SysAdmin Requests"]
+    assert post["focus"][-1] == {"text": "Daily SysAdmin Requests", "status": "wip"}
+
+
 def test_cancelled_roundtrip():
     post = F.parse_post(POST.replace("• Schedule Bogy\n", "• Schedule Bogy :x:\n"))
     bogy = next(i for i in post["focus"] if i["text"] == "Schedule Bogy")

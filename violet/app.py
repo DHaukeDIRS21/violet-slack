@@ -309,7 +309,7 @@ class Violet:
             post["recap"] = current["recap"]
         else:
             today = self.slack.now().strftime("%A, %d.%m.%Y")
-            post = self.llm.new_focus_post(previous, answer, today)
+            post = F.ensure_daily(self.llm.new_focus_post(previous, answer, today))
         self.preview({
             "kind": "focus",
             "post": post,
